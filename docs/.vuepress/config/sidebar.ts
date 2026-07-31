@@ -1,6 +1,47 @@
 import { sidebar } from "vuepress-theme-hope";
 
 export const sidebar_hope = sidebar({
+  "/ai-tech/": [
+    { text: "介绍", link: "/ai-tech/" },
+    {
+      text: "AI",
+      collapsible: true,
+      children: [
+        { text: "编排运行时", link: "/ai-tech/backend/ai-runtime.html" },
+        { text: "记忆管理", link: "/ai-tech/memory.html" },
+        { text: "意图识别", link: "/ai-tech/intent.html" },
+
+        { text: "工具调用", link: "/ai-tech/tool-calling.html" },
+        { text: "反思反馈", link: "/ai-tech/reflection.html" },
+        { text: "评估与可观测性", link: "/ai-tech/evaluation.html" },
+        { text: "上下文管理", link: "/ai-tech/context.html" },
+        { text: "安全", link: "/ai-tech/security.html" },
+        { text: "工程化踩坑与质量属性", link: "/ai-tech/engineering.html" },
+        { text: "附录", link: "/ai-tech/appendix.html" },
+      ],
+    },
+    {
+      text: "前端",
+      link: "/ai-tech/frontend/",
+      collapsible: true,
+      children: [
+        { text: "概述", link: "/ai-tech/frontend/" },
+        { text: "编辑器（X6）", link: "/ai-tech/frontend/editor.html" },
+      ],
+    },
+    {
+      text: "后端",
+      link: "/ai-tech/backend/",
+      collapsible: true,
+      children: [
+        { text: "概述", link: "/ai-tech/backend/" },
+        { text: "登录鉴权", link: "/ai-tech/backend/auth.html" },
+        { text: "存储层设计", link: "/ai-tech/backend/storage.html" },
+        { text: "部署", link: "/ai-tech/backend/deploy.html" },
+        { text: "结果输出", link: "/ai-tech/streaming.html" },
+      ],
+    },
+  ],
   "/APIdocs/": [
     /* vuepress会自动解析文档的标题；侧边栏的顺序就是这里md文档的顺序；文档的名称不能使用中文；文件夹名称不能使用中文 */
     {

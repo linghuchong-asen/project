@@ -1,14 +1,17 @@
 import { defineUserConfig } from "vuepress";
+import path from "node:path";
 import theme from "./config/theme.js";
 
-import { searchProPlugin } from "vuepress-plugin-search-pro";
 import { registerComponentsPlugin } from "@vuepress/plugin-register-components";
+import { viteBundler } from "@vuepress/bundler-vite";
 
 export default defineUserConfig({
   base: "/projectDemo/",
 
   lang: "zh-CN",
   title: "项目demo",
+
+  bundler: viteBundler(),
 
   head: [["link", { real: "icon", href: "/projectDemo/favicon.ico" }]], // 配置网站图标
 
@@ -20,15 +23,6 @@ export default defineUserConfig({
   dest: "blog", // 举例：这里输出至根目录下的blog文件夹下
 
   plugins: [
-    searchProPlugin({
-      // 索引全部内容
-      indexContent: true,
-      locales: {
-        "/": {
-          placeholder: "搜索 Ctrl+K",
-        },
-      },
-    }),
     registerComponentsPlugin({
       componentsDir: path.resolve(__dirname, "./components"),
     }),

@@ -1,0 +1,797 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>语图 Agent 系统架构图（修复版）</title>
+<style>
+  :root {
+    --c-bg: #f7f7f8;
+    --c-surface: #ffffff;
+    --c-surface-muted: #f0f0f3;
+    --c-text: #171717;
+    --c-text-muted: #52525b;
+    --c-border: rgba(23,23,23,0.10);
+    --c-border-strong: rgba(23,23,23,0.18);
+    --c-brand: #4b3fe3;
+    --c-brand-soft: #f2f0ff;
+    --c-brand-text: #1a1759;
+    --c-left-bg: #f0f6ff;
+    --c-left-border: #3b82f6;
+    --c-left-text: #1e3a5f;
+    --c-right-bg: #fff8ec;
+    --c-right-border: #e8a317;
+    --c-right-text: #6b4c0e;
+    --c-bottom-bg: #f4f4f5;
+    --c-bottom-border: #6b7280;
+    --c-new: #16a34a;
+    --c-new-bg: #dcfce7;
+    --c-changed: #c2410c;
+    --c-changed-bg: #ffedd5;
+    --c-focal: #4b3fe3;
+    --c-arrow: #9ca3af;
+    --radius: 8px;
+    --radius-card: 12px;
+    --font: "Noto Sans CJK SC", "PingFang SC", "Microsoft YaHei", system-ui, -apple-system, sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --c-bg: #171717;
+      --c-surface: #1e1e1e;
+      --c-surface-muted: #2a2a2a;
+      --c-text: #e5e5e5;
+      --c-text-muted: #a1a1aa;
+      --c-border: rgba(229,229,229,0.10);
+      --c-border-strong: rgba(229,229,229,0.18);
+      --c-brand: #6054f1;
+      --c-brand-soft: #1a1759;
+      --c-brand-text: #cfd8ff;
+      --c-left-bg: #0c1a2e;
+      --c-left-border: #3b82f6;
+      --c-left-text: #93c5fd;
+      --c-right-bg: #2a1f0a;
+      --c-right-border: #e8a317;
+      --c-right-text: #fcd34d;
+      --c-bottom-bg: #1e1e1e;
+      --c-bottom-border: #6b7280;
+      --c-new: #4ade80;
+      --c-new-bg: #052e16;
+      --c-changed: #fb923c;
+      --c-changed-bg: #2a1505;
+      --c-arrow: #4b5563;
+    }
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: var(--font);
+    background: var(--c-bg);
+    color: var(--c-text);
+    line-height: 1.6;
+    padding: 32px 24px;
+  }
+  .page-title {
+    text-align: center;
+    font-size: 20px;
+    font-weight: 600;
+    margin-bottom: 6px;
+    letter-spacing: 0.5px;
+  }
+  .page-sub {
+    text-align: center;
+    font-size: 13px;
+    color: var(--c-text-muted);
+    margin-bottom: 24px;
+  }
+  .legend {
+    display: flex;
+    gap: 16px;
+    justify-content: center;
+    margin-bottom: 24px;
+    flex-wrap: wrap;
+  }
+  .legend-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    color: var(--c-text-muted);
+  }
+  .legend-badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 11px;
+    font-weight: 500;
+  }
+  .badge-new {
+    background: var(--c-new-bg);
+    color: var(--c-new);
+    border: 1px solid var(--c-new);
+  }
+  .badge-changed {
+    background: var(--c-changed-bg);
+    color: var(--c-changed);
+    border: 1px solid var(--c-changed);
+  }
+  .badge-focal {
+    background: var(--c-brand-soft);
+    color: var(--c-brand);
+    border: 1px solid var(--c-brand);
+  }
+  .layout {
+    display: grid;
+    grid-template-columns: 220px 1fr 220px;
+    gap: 72px;
+    max-width: 1340px;
+    margin: 0 auto;
+    position: relative;
+  }
+  /* Side panels */
+  .side-panel {
+    border: 2px dashed;
+    border-radius: var(--radius-card);
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+  .side-left {
+    background: var(--c-left-bg);
+    border-color: var(--c-left-border);
+  }
+  .side-right {
+    background: var(--c-right-bg);
+    border-color: var(--c-right-border);
+  }
+  .center-wrap {
+    border: 2px solid var(--c-brand);
+    border-radius: var(--radius-card);
+    padding: 16px 40px 16px 16px;
+    background: var(--c-brand-soft);
+    position: relative;
+  }
+  .center-wrap-title {
+    text-align: center;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--c-brand-text);
+    margin-bottom: 12px;
+    padding-bottom: 8px;
+    border-bottom: 1px dashed var(--c-border);
+  }
+  .gap-arrows-overlay {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    z-index: 10;
+    overflow: visible;
+  }
+  .side-title {
+    font-size: 14px;
+    font-weight: 600;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--c-border);
+    margin-bottom: 4px;
+  }
+  .side-left .side-title { color: var(--c-left-text); border-color: var(--c-left-border); }
+  .side-right .side-title { color: var(--c-right-text); border-color: var(--c-right-border); }
+  .side-item {
+    background: var(--c-surface);
+    border: 1px solid var(--c-border);
+    border-radius: var(--radius);
+    padding: 10px 12px;
+  }
+  .side-item-title {
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--c-text);
+    margin-bottom: 4px;
+  }
+  .side-item-desc {
+    font-size: 11.5px;
+    color: var(--c-text-muted);
+    line-height: 1.5;
+  }
+  /* Center pipeline */
+  .pipeline {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+    position: relative;
+  }
+  .loopback-legend {
+    display: flex;
+    gap: 12px;
+    justify-content: center;
+    margin-bottom: 12px;
+    flex-wrap: wrap;
+  }
+  .loopback-legend-item {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 11px;
+    color: var(--c-text-muted);
+  }
+  .loopback-line {
+    display: inline-block;
+    width: 18px;
+    height: 0;
+    border-top: 1.5px dashed;
+  }
+  .loopback-line.brand { border-color: var(--c-brand); }
+  .loopback-line.changed { border-color: var(--c-changed); }
+  .layer-card {
+    background: var(--c-surface);
+    border: 1px solid var(--c-border-strong);
+    border-radius: var(--radius-card);
+    padding: 14px 16px;
+    position: relative;
+  }
+  .layer-card.focal {
+    border: 2px solid var(--c-brand);
+    box-shadow: 0 0 0 3px var(--c-brand-soft);
+  }
+  .layer-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 10px;
+    flex-wrap: wrap;
+  }
+  .layer-num {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    background: var(--c-brand);
+    color: #fff;
+    font-size: 12px;
+    font-weight: 600;
+    flex-shrink: 0;
+  }
+  .layer-name {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--c-text);
+  }
+  .layer-badge {
+    display: inline-block;
+    padding: 1px 7px;
+    border-radius: 4px;
+    font-size: 10.5px;
+    font-weight: 500;
+  }
+  .components {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .comp {
+    background: var(--c-surface-muted);
+    border: 1px solid var(--c-border);
+    border-radius: var(--radius);
+    padding: 8px 10px;
+    font-size: 12px;
+    line-height: 1.45;
+    flex: 1;
+    min-width: 140px;
+  }
+  .comp-title {
+    font-weight: 500;
+    color: var(--c-text);
+    margin-bottom: 2px;
+  }
+  .comp-desc {
+    color: var(--c-text-muted);
+    font-size: 11px;
+  }
+  .comp.focal-comp {
+    background: var(--c-brand-soft);
+    border-color: var(--c-brand);
+  }
+  .comp.focal-comp .comp-title { color: var(--c-brand-text); }
+  .comp.focal-comp .comp-desc { color: var(--c-brand); }
+  .comp.new-comp {
+    border-color: var(--c-new);
+    border-style: dashed;
+  }
+  /* Arrow between layers */
+  .arrow-down {
+    display: flex;
+    justify-content: center;
+    padding: 5px 0;
+  }
+  .arrow-down svg {
+    width: 20px;
+    height: 20px;
+  }
+  .arrow-down path {
+    fill: none;
+    stroke: var(--c-arrow);
+    stroke-width: 2;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+  .arrow-down polygon {
+    fill: var(--c-arrow);
+  }
+  /* Bidirectional indicator for side panels */
+  .bi-indicator {
+    font-size: 10px;
+    color: var(--c-text-muted);
+    text-align: center;
+    font-style: italic;
+    margin-top: 6px;
+  }
+  /* Bottom panel */
+  .bottom-panel {
+    grid-column: 1 / -1;
+    background: var(--c-bottom-bg);
+    border: 2px solid var(--c-bottom-border);
+    border-radius: var(--radius-card);
+    padding: 10px 20px;
+    margin-top: -40px;
+  }
+  .bottom-title {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--c-text-muted);
+    margin-bottom: 12px;
+    text-align: center;
+  }
+  .bottom-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 12px;
+  }
+  .bottom-item {
+    background: var(--c-surface);
+    border: 1px solid var(--c-border);
+    border-radius: var(--radius);
+    padding: 10px 12px;
+  }
+  .bottom-item-title {
+    font-size: 12.5px;
+    font-weight: 500;
+    color: var(--c-text);
+    margin-bottom: 3px;
+  }
+  .bottom-item-desc {
+    font-size: 11px;
+    color: var(--c-text-muted);
+    line-height: 1.45;
+  }
+  @media (max-width: 900px) {
+    .layout { grid-template-columns: 1fr; gap: 16px; }
+    .center-wrap { border: none; padding: 0; background: transparent; }
+    .center-wrap-title { display: none; }
+    .bottom-grid { grid-template-columns: repeat(2, 1fr); }
+  }
+</style>
+</head>
+<body>
+
+<div class="layout">
+
+  <!-- ===== 左侧：记忆与状态层 ===== -->
+  <div class="side-panel side-left">
+    <div class="side-title">记忆与状态层</div>
+
+    <div class="side-item">
+      <div class="side-item-title">短期记忆</div>
+      <div class="side-item-desc">PostgreSaver State<br>结构化JSON（原文+意图+实体+话题ID）<br>跟随当前对话，>3天归档</div>
+    </div>
+
+    <div class="side-item">
+      <div class="side-item-title">长期记忆</div>
+      <div class="side-item-desc">PostgresStore + pgvector<br>摘要 + 向量(BGE-M3) + 关键词<br>+ sessionEntitySlot + 元数据</div>
+    </div>
+
+    <div class="side-item">
+      <div class="side-item-title">用户画像</div>
+      <div class="side-item-desc">独立命名空间 JSON<br>会话结束异步更新<br>按需检索注入，非全量</div>
+    </div>
+
+    <div class="side-item">
+      <div class="side-item-title">遗忘策略</div>
+      <div class="side-item-desc">指数衰减 weight=exp(-0.693×d/halfLife)<br>每周扫描：>0.5保留 / 0.3-0.5压缩 / <0.3删除</div>
+    </div>
+
+    <div class="side-item">
+      <div class="side-item-title">召回策略</div>
+      <div class="side-item-desc">评估后召回（90%只走短期）<br>双路召回（向量+关键词）<br>RRF融合 → Reranker重排 → top3</div>
+    </div>
+
+  </div>
+
+  <!-- ===== 中央流水线（加框） ===== -->
+  <div class="center-wrap">
+  <div class="center-wrap-title">Agent 工作流主链路</div>
+  <div class="pipeline">
+
+    <!-- Layer 1 -->
+    <div class="layer-card">
+      <div class="layer-header">
+        <span class="layer-num">1</span>
+        <span class="layer-name">感知输入层</span>
+      </div>
+      <div class="components">
+        <div class="comp">
+          <div class="comp-title">System Prompt</div>
+          <div class="comp-desc">角色设定 / 背景介绍<br>指令 / 输出格式约束</div>
+        </div>
+        <div class="comp">
+          <div class="comp-title">用户自然语言</div>
+          <div class="comp-desc">当前轮文本输入（非多模态）</div>
+        </div>
+        <div class="comp">
+          <div class="comp-title">会话历史</div>
+          <div class="comp-desc">last K 近期原文（K=3）<br>+ summary 长期摘要（1-3条）<br>+ 向量检索相关片段（2-5条）</div>
+        </div>
+        <div class="comp">
+          <div class="comp-title">画布状态</div>
+          <div class="comp-desc">modify场景注入完整FlowDraft（带ID）<br>支撑按ID做增量diff<br>generate/consult不注入</div>
+        </div>
+        <div class="comp">
+          <div class="comp-title">工具上下文</div>
+          <div class="comp-desc">工具定义 / Schema描述清单<br>工具调用结果</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="arrow-down"><svg viewBox="0 0 20 20"><path d="M10 2 L10 14"/><polygon points="10,19 5,13 15,13"/></svg></div>
+
+    <!-- Layer 2 -->
+    <div class="layer-card">
+      <div class="layer-header">
+        <span class="layer-num">2</span>
+        <span class="layer-name">意图识别与路由层</span>
+      </div>
+      <div class="components">
+        <div class="comp">
+          <div class="comp-title">规则匹配（第一级）</div>
+          <div class="comp-desc">动词特征 + 上下文状态<br>命中即路由，零延迟零成本</div>
+        </div>
+        <div class="comp">
+          <div class="comp-title">模型兜底（第二级）</div>
+          <div class="comp-desc">规则覆盖不到时调小模型<br>歧义/多命中场景</div>
+        </div>
+        <div class="comp">
+          <div class="comp-title">路由分发</div>
+          <div class="comp-desc">generate → 推理→生成→校验<br>modify → 增量生成→校验<br>consult → 纯问答</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="arrow-down"><svg viewBox="0 0 20 20"><path d="M10 2 L10 14"/><polygon points="10,19 5,13 15,13"/></svg></div>
+
+    <!-- Layer 3 -->
+    <div class="layer-card">
+      <div class="layer-header">
+        <span class="layer-num">3</span>
+        <span class="layer-name">上下文组装层</span>
+      </div>
+      <div class="components">
+        <div class="comp">
+          <div class="comp-title">差异化组装</div>
+          <div class="comp-desc">按意图类型决定注入内容<br>重要信息放开头/结尾<br>应对 lost-in-the-middle</div>
+        </div>
+        <div class="comp">
+          <div class="comp-title">Token预算管控</div>
+          <div class="comp-desc">控总量为主（上限80%窗口）<br>控条数兜底（last K=3, summary=1-3）<br>哪部分畸高砍哪部分</div>
+        </div>
+        <div class="comp">
+          <div class="comp-title">State化管理</div>
+          <div class="comp-desc">每节点维护自己的State片段<br>组装节点读取各部分拼context<br>含优先级：当前会话>同项目>其他项目</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="arrow-down"><svg viewBox="0 0 20 20"><path d="M10 2 L10 14"/><polygon points="10,19 5,13 15,13"/></svg></div>
+
+    <!-- Layer 4 -->
+    <div class="layer-card">
+      <div class="layer-header">
+        <span class="layer-num">4</span>
+        <span class="layer-name">推理与编排层</span>
+      </div>
+      <div class="components">
+        <div class="comp focal-comp">
+          <div class="comp-title">★ COT 思维链推理</div>
+          <div class="comp-desc">同一次模型调用：先逐token输出思考<br>再输出结构化 FlowDraft JSON<br>思考过程经 SSE 实时推送</div>
+        </div>
+        <div class="comp">
+          <div class="comp-title">状态图编排</div>
+          <div class="comp-desc">LangGraph 条件边 + 重试 + 反思回路<br>非传统步骤排序/决策调度</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="arrow-down"><svg viewBox="0 0 20 20"><path d="M10 2 L10 14"/><polygon points="10,19 5,13 15,13"/></svg></div>
+
+    <!-- Layer 5 -->
+    <div class="layer-card focal">
+      <div class="layer-header">
+        <span class="layer-num">5</span>
+        <span class="layer-name">执行与工具层</span>
+      </div>
+      <div class="components">
+        <div class="comp">
+          <div class="comp-title">模型分层推理</div>
+          <div class="comp-desc">高级模型：COT推理+核心生成<br>中等模型：反思校验<br>低级/规则：意图识别</div>
+        </div>
+        <div class="comp focal-comp">
+          <div class="comp-title">★ FlowDraft 中间结构生成</div>
+          <div class="comp-desc">模型只输出语义结构（节点ID/标签/类型/连接）<br>坐标样式全部交给确定性代码</div>
+        </div>
+        <div class="comp">
+          <div class="comp-title">ToolNode适配层</div>
+          <div class="comp-desc">工具调用 + 结果归一化<br>错误结构化（ToolError）<br>不把原始错误丢给模型</div>
+        </div>
+        <div class="comp">
+          <div class="comp-title">失败分类与降级</div>
+          <div class="comp-desc">网络类 → 代码重试（指数退避）<br>参数类 → 模型自修正<br>重试失败 → System Prompt引导降级</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="arrow-down"><svg viewBox="0 0 20 20"><path d="M10 2 L10 14"/><polygon points="10,19 5,13 15,13"/></svg></div>
+
+    <!-- Layer 6 -->
+    <div class="layer-card">
+      <div class="layer-header">
+        <span class="layer-num">6</span>
+        <span class="layer-name">反思与反馈层</span>
+      </div>
+      <div class="components">
+        <div class="comp">
+          <div class="comp-title">两层确定性校验</div>
+          <div class="comp-desc">① Zod Schema 格式合法<br>② 图遍历 结构合理（断头/缺分支/未闭环）<br>全代码，模型不介入</div>
+        </div>
+        <div class="comp">
+          <div class="comp-title">结果修正</div>
+          <div class="comp-desc">格式/结构问题 → Rewriter（不重走Agent）<br>结构性错误 → 重试生成</div>
+        </div>
+        <div class="comp">
+          <div class="comp-title">Human-in-the-loop</div>
+          <div class="comp-desc">模糊语义交用户确认<br>不盲改——可靠性最后防线</div>
+        </div>
+        <div class="comp">
+          <div class="comp-title">循环控制器</div>
+          <div class="comp-desc">控制反思-修正循环次数<br>防止无限循环烧Token</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="arrow-down"><svg viewBox="0 0 20 20"><path d="M10 2 L10 14"/><polygon points="10,19 5,13 15,13"/></svg></div>
+
+    <!-- Layer 7 -->
+    <div class="layer-card">
+      <div class="layer-header">
+        <span class="layer-num">7</span>
+        <span class="layer-name">输出层</span>
+      </div>
+      <div class="components">
+        <div class="comp">
+          <div class="comp-title">SSE 流式推送（COT）</div>
+          <div class="comp-desc">@Sse + RxJS Observable<br>同次模型调用中逐token推送思维链<br>generate·modify 场景</div>
+        </div>
+        <div class="comp">
+          <div class="comp-title">fetch 一次性返回（FlowDraft）</div>
+          <div class="comp-desc">同次模型调用最终输出<br>FlowDraft JSON 完整返回<br>前端接收后渲染画布</div>
+        </div>
+        <div class="comp focal-comp">
+          <div class="comp-title">★ 前端转换层</div>
+          <div class="comp-desc">FlowDraft → @antv/layout 布局算坐标<br>→ 节点类型映射表生成样式+ports<br>→ 拼装注册到 X6 画布</div>
+        </div>
+        <div class="comp">
+          <div class="comp-title">三种意图输出</div>
+          <div class="comp-desc">generate → 画布渲染流程图<br>modify → 增量Diff修改画布<br>consult → 自然语言回答</div>
+        </div>
+        <div class="comp">
+          <div class="comp-title">连接生命周期</div>
+          <div class="comp-desc">AbortController + takeUntil(abort$)<br>前端断连后端立即终止模型调用</div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+  </div>
+
+  <!-- ===== 右侧：观测层 ===== -->
+  <div class="side-panel side-right">
+    <div class="side-title">观测层</div>
+
+    <div class="side-item">
+      <div class="side-item-title">Langfuse 全链路 Trace</div>
+      <div class="side-item-desc">意图→推理→组装→工具→反思<br>完整执行轨迹可追溯<br>Prompt/Token/延时/异常全记录</div>
+    </div>
+
+    <div class="side-item">
+      <div class="side-item-title">评估体系</div>
+      <div class="side-item-desc">结构维度：格式合规率、图结构完整性<br>语义维度：业务准确性（人工标注）<br>组件维度：意图/推理/工具/记忆准确率<br>轨迹维度：工具调用次数、反思回路</div>
+    </div>
+
+    <div class="side-item">
+      <div class="side-item-title">发版闸门</div>
+      <div class="side-item-desc">格式合规率 100%<br>意图识别 ≥ 95%<br>记忆召回 ≥ 95%<br>工具调用 ≥ 98%<br>Bad Case 零劣化</div>
+    </div>
+
+    <div class="side-item">
+      <div class="side-item-title">运行监控</div>
+      <div class="side-item-desc">Token消耗（分意图计量）<br>模型延时、吞吐量<br>异常率、错误率</div>
+    </div>
+
+  </div>
+
+  <!-- ===== 底部：治理保障层 ===== -->
+  <div class="bottom-panel">
+    <div class="bottom-title">底层支撑：治理保障层</div>
+    <div class="bottom-grid">
+      <div class="bottom-item">
+        <div class="bottom-item-title">JWT鉴权</div>
+        <div class="bottom-item-desc">Redis 令牌态<br>支持主动失效/多端登录<br>JWT + Refresh Token</div>
+      </div>
+      <div class="bottom-item">
+        <div class="bottom-item-title">双套日志</div>
+        <div class="bottom-item-desc">NestJS请求日志中间件<br>+ Langfuse LLM trace<br>职责分离</div>
+      </div>
+      <div class="bottom-item">
+        <div class="bottom-item-title">安全防护</div>
+        <div class="bottom-item-desc">Prompt注入分层防御<br>输出脱敏（结构化错误转换）<br>工具白名单+参数校验<br>数据隔离（项目/用户/编辑器）</div>
+      </div>
+      <div class="bottom-item">
+        <div class="bottom-item-title">成本治理</div>
+        <div class="bottom-item-desc">三级Token防护：<br>用户级每日配额<br>会话级软上限<br>调用级max_tokens硬上限<br>+ 模型分层策略</div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+(function(){
+  function drawAll(){
+    var layout=document.querySelector('.layout');
+    if(!layout)return;
+    var pipeline=document.querySelector('.pipeline');
+    if(!pipeline)return;
+    var layers=pipeline.querySelectorAll('.layer-card');
+    if(layers.length<6)return;
+    var leftPanel=document.querySelector('.side-left');
+    var rightPanel=document.querySelector('.side-right');
+    var centerWrap=document.querySelector('.center-wrap');
+
+    var lRect=layout.getBoundingClientRect();
+
+    // Get colors
+    var cs=getComputedStyle(document.documentElement);
+    var brand=cs.getPropertyValue('--c-brand').trim()||'#4b3fe3';
+    var changed=cs.getPropertyValue('--c-changed').trim()||'#c2410c';
+    var leftB=cs.getPropertyValue('--c-left-border').trim()||'#3b82f6';
+    var rightB=cs.getPropertyValue('--c-right-border').trim()||'#e8a317';
+    var surface=cs.getPropertyValue('--c-surface').trim()||'#fff';
+    var border=cs.getPropertyValue('--c-border').trim()||'rgba(0,0,0,0.1)';
+    var textMuted=cs.getPropertyValue('--c-text-muted').trim()||'#52525b';
+
+    // Remove old overlay
+    var old=document.getElementById('masterOverlay');
+    if(old)old.remove();
+
+    // Create overlay
+    var ov=document.createElement('div');
+    ov.id='masterOverlay';
+    ov.style.cssText='position:absolute;left:0;top:0;width:100%;height:100%;pointer-events:none;z-index:20;overflow:visible';
+    var svg=document.createElementNS('http://www.w3.org/2000/svg','svg');
+    svg.setAttribute('xmlns','http://www.w3.org/2000/svg');
+    svg.style.cssText='position:absolute;left:0;top:0;width:100%;height:100%;overflow:visible';
+    ov.appendChild(svg);
+    layout.appendChild(ov);
+
+    // === Markers ===
+    var defs='<defs>'+
+      '<marker id="mb" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto" markerUnits="userSpaceOnUse"><path d="M0 0L10 5L0 10Z" fill="'+brand+'"/></marker>'+
+      '<marker id="mc" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto" markerUnits="userSpaceOnUse"><path d="M0 0L10 5L0 10Z" fill="'+changed+'"/></marker>'+
+      '<marker id="ml" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto" markerUnits="userSpaceOnUse"><path d="M0 0L10 5L0 10Z" fill="'+leftB+'"/></marker>'+
+      '<marker id="mr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto" markerUnits="userSpaceOnUse"><path d="M0 0L10 5L0 10Z" fill="'+rightB+'"/></marker>'+
+      '<marker id="mlr" viewBox="0 0 10 10" refX="1" refY="5" markerWidth="7" markerHeight="7" orient="auto" markerUnits="userSpaceOnUse"><path d="M10 0L0 5L10 10Z" fill="'+leftB+'"/></marker>'+
+      '<marker id="mrr" viewBox="0 0 10 10" refX="1" refY="5" markerWidth="7" markerHeight="7" orient="auto" markerUnits="userSpaceOnUse"><path d="M10 0L0 5L10 10Z" fill="'+rightB+'"/></marker>'+
+      '</defs>';
+
+    var paths=defs;
+
+    // === Bidirectional arrows: left panel <-> center ===
+    if(leftPanel&&centerWrap){
+      var lpR=leftPanel.getBoundingClientRect();
+      var cwR=centerWrap.getBoundingClientRect();
+      var lpRightX=lpR.right-lRect.left;
+      var cwLeftX=cwR.left-lRect.left;
+      var midY=lpR.top-lRect.top+lpR.height/2;
+      // Arrow: left -> center (upper)
+      var yTop=midY-22;
+      paths+='<path d="M'+lpRightX+' '+yTop+' L'+cwLeftX+' '+yTop+'" fill="none" stroke="'+leftB+'" stroke-width="1.5" stroke-dasharray="4 3" marker-end="url(#ml)"/>';
+      // Arrow: center -> left (lower)
+      var yBot=midY+22;
+      paths+='<path d="M'+cwLeftX+' '+yBot+' L'+lpRightX+' '+yBot+'" fill="none" stroke="'+leftB+'" stroke-width="1.5" stroke-dasharray="4 3" marker-end="url(#mlr)"/>';
+      // Label
+      paths+='<rect x="'+((lpRightX+cwLeftX)/2-35)+'" y="'+(midY-8)+'" width="70" height="16" rx="3" fill="'+surface+'" stroke="'+border+'" stroke-width="0.5" opacity="0.95"/>';
+      paths+='<text x="'+((lpRightX+cwLeftX)/2)+'" y="'+(midY+3)+'" fill="'+textMuted+'" font-size="8" font-family="sans-serif" text-anchor="middle">双向数据流</text>';
+    }
+
+    // === Bidirectional arrows: center <-> right panel ===
+    if(rightPanel&&centerWrap){
+      var rpR=rightPanel.getBoundingClientRect();
+      var cwR2=centerWrap.getBoundingClientRect();
+      var cwRightX=cwR2.right-lRect.left;
+      var rpLeftX=rpR.left-lRect.left;
+      var midY2=rpR.top-lRect.top+rpR.height/2;
+      // Arrow: center -> right (upper)
+      var yTop2=midY2-22;
+      paths+='<path d="M'+cwRightX+' '+yTop2+' L'+rpLeftX+' '+yTop2+'" fill="none" stroke="'+rightB+'" stroke-width="1.5" stroke-dasharray="4 3" marker-end="url(#mr)"/>';
+      // Arrow: right -> center (lower)
+      var yBot2=midY2+22;
+      paths+='<path d="M'+rpLeftX+' '+yBot2+' L'+cwRightX+' '+yBot2+'" fill="none" stroke="'+rightB+'" stroke-width="1.5" stroke-dasharray="4 3" marker-end="url(#mrr)"/>';
+      // Label
+      paths+='<rect x="'+((cwRightX+rpLeftX)/2-35)+'" y="'+(midY2-8)+'" width="70" height="16" rx="3" fill="'+surface+'" stroke="'+border+'" stroke-width="0.5" opacity="0.95"/>';
+      paths+='<text x="'+((cwRightX+rpLeftX)/2)+'" y="'+(midY2+3)+'" fill="'+textMuted+'" font-size="8" font-family="sans-serif" text-anchor="middle">双向数据流</text>';
+    }
+
+    // === Loopback arrow: reflection -> execution ===
+    var pRect=pipeline.getBoundingClientRect();
+    var l5=layers[4].getBoundingClientRect();
+    var l6=layers[5].getBoundingClientRect();
+
+    // Coordinates relative to layout (for SVG overlay)
+    var pipeRightX=pRect.right-lRect.left;
+    var l5MidY=l5.top-lRect.top+l5.height/2;
+    var l6TopY=l6.top-lRect.top;
+
+    var r=6; // corner radius for elbow connector
+    var off1=14; // loopback offset (Layer6 -> Layer5)
+
+    // Loopback: Layer6 -> Layer5 (format/structure -> Rewriter)
+    var sy1=l6TopY+25;
+    var ey1=l5MidY;
+    var vx1=pipeRightX+off1;
+    paths+='<path d="M'+pipeRightX+' '+sy1+' L'+(vx1-r)+' '+sy1+' Q'+vx1+' '+sy1+' '+vx1+' '+(sy1-r)+' L'+vx1+' '+(ey1+r)+' Q'+vx1+' '+ey1+' '+(vx1-r)+' '+ey1+' L'+pipeRightX+' '+ey1+'" fill="none" stroke="'+brand+'" stroke-width="1.5" stroke-dasharray="5 3" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#mb)"/>';
+
+    // Label on loopback vertical segment
+    var lbMid1Y=(sy1+ey1)/2;
+    paths+='<rect x="'+(vx1-9)+'" y="'+(lbMid1Y-28)+'" width="18" height="56" rx="3" fill="'+surface+'" stroke="'+border+'" stroke-width="0.5" opacity="0.92"/>';
+    paths+='<text x="'+vx1+'" y="'+lbMid1Y+'" fill="'+brand+'" font-size="8" font-family="sans-serif" text-anchor="middle" transform="rotate(-90,'+vx1+','+lbMid1Y+')">格式结构问题</text>';
+
+    svg.innerHTML=paths;
+  }
+
+  // Check if mobile layout (single column)
+  function isMobile(){
+    return window.innerWidth<=900;
+  }
+
+  function safeDraw(){
+    if(!isMobile()){
+      drawAll();
+    } else {
+      var old=document.getElementById('masterOverlay');
+      if(old)old.remove();
+    }
+  }
+
+  window.addEventListener('load',safeDraw);
+  window.addEventListener('resize',safeDraw);
+  if(document.fonts&&document.fonts.ready){
+    document.fonts.ready.then(safeDraw);
+  }
+  setTimeout(safeDraw,300);
+  setTimeout(safeDraw,800);
+})();
+</script>
+
+</body>
+</html>

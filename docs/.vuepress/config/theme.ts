@@ -3,7 +3,7 @@
  * @Author: yangsen
  * @Date: 2022-12-29 17:43:41
  * @LastEditors: yangsen
- * @LastEditTime: 2023-03-12 22:54:01
+ * @LastEditTime: 2026-07-31 09:03:18
  */
 import { hopeTheme } from "vuepress-theme-hope";
 import { navbar_hope } from "./navbar";
@@ -16,9 +16,9 @@ export default hopeTheme({
     name: "杨森",
   },
 
-  iconAssets: "iconfont", // 项目中使用的图标设置，不是网站的图标
-
   logo: "/logo-removeBg-preview.png", // 博客左上角的logo
+
+  iconAssets: "iconfont", // 项目中使用的图标设置
 
   pageInfo: ["Author", "Original", "Date", "Category", "Tag", "ReadingTime"],
   // 主题颜色
@@ -36,9 +36,9 @@ export default hopeTheme({
   navbar: navbar_hope,
   // 导航栏布局
   navbarLayout: {
-    left: ["Brand", "Search"],
+    start: ["Brand", "Search"],
     center: [],
-    right: ["Links", "Outlook"],
+    end: ["Links", "Outlook"],
   },
 
   // sidebar
@@ -60,112 +60,55 @@ export default hopeTheme({
     },
   },
 
+  markdown: {
+    align: true,
+    attrs: true,
+    codeTabs: true,
+    demo: true,
+    figure: true,
+    gfm: true,
+    imgLazyload: true,
+    imgSize: true,
+    include: true,
+    mark: true,
+    math: true,
+    mermaid: true,
+    playground: {
+      presets: ["ts", "vue"],
+    },
+    stylize: [
+      {
+        matcher: "Recommended",
+        replacer: ({ tag }) => {
+          if (tag === "em")
+            return {
+              tag: "Badge",
+              attrs: { type: "tip" },
+              content: "Recommended",
+            };
+        },
+      },
+    ],
+    sub: true,
+    sup: true,
+    tabs: true,
+    vPre: true,
+  },
+
   plugins: {
-    // Disable features you don’t want here
-    mdEnhance: {
-      align: true,
-      attrs: true,
-      chart: true,
-      codetabs: true,
-      container: true,
-      demo: true,
-      echarts: true,
-      figure: true,
-      flowchart: true,
-      gfm: true,
-      imgLazyload: true,
-      imgSize: true,
-      include: true,
-      katex: true,
-      mark: true,
-      mermaid: true,
-      playground: {
-        presets: ["ts", "vue"],
-      },
-      presentation: {
-        plugins: ["highlight", "math", "search", "notes", "zoom"],
-      },
-      stylize: [
+    slimsearch: {
+      indexContent: true,
+      hotKeys: [
         {
-          matcher: "Recommended",
-          replacer: ({ tag }) => {
-            if (tag === "em")
-              return {
-                tag: "Badge",
-                attrs: { type: "tip" },
-                content: "Recommended",
-              };
-          },
+          key: "k",
+          ctrl: true,
         },
       ],
-      sub: true,
-      sup: true,
-      tabs: true,
-      vPre: true,
-      vuePlayground: true,
+      locales: {
+        "/": {
+          placeholder: "搜索 Ctrl + K",
+        },
+      },
     },
-
-    // uncomment these if you want a pwa
-    // pwa: {
-    //   favicon: "/favicon.ico",
-    //   cacheHTML: true,
-    //   cachePic: true,
-    //   appendBase: true,
-    //   apple: {
-    //     icon: "/assets/icon/apple-icon-152.png",
-    //     statusBarColor: "black",
-    //   },
-    //   msTile: {
-    //     image: "/assets/icon/ms-icon-144.png",
-    //     color: "#ffffff",
-    //   },
-    //   manifest: {
-    //     icons: [
-    //       {
-    //         src: "/assets/icon/chrome-mask-512.png",
-    //         sizes: "512x512",
-    //         purpose: "maskable",
-    //         type: "image/png",
-    //       },
-    //       {
-    //         src: "/assets/icon/chrome-mask-192.png",
-    //         sizes: "192x192",
-    //         purpose: "maskable",
-    //         type: "image/png",
-    //       },
-    //       {
-    //         src: "/assets/icon/chrome-512.png",
-    //         sizes: "512x512",
-    //         type: "image/png",
-    //       },
-    //       {
-    //         src: "/assets/icon/chrome-192.png",
-    //         sizes: "192x192",
-    //         type: "image/png",
-    //       },
-    //     ],
-    //     shortcuts: [
-    //       {
-    //         name: "Demo",
-    //         short_name: "Demo",
-    //         url: "/demo/",
-    //         icons: [
-    //           {
-    //             src: "/assets/icon/guide-maskable.png",
-    //             sizes: "192x192",
-    //             purpose: "maskable",
-    //             type: "image/png",
-    //           },
-    //           {
-    //             src: "/assets/icon/guide-monochrome.png",
-    //             sizes: "192x192",
-    //             purpose: "monochrome",
-    //             type: "image/png",
-    //           },
-    //         ],
-    //       },
-    //     ],
-    //   },
-    // },
   },
 });
