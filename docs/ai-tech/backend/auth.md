@@ -60,19 +60,19 @@ flowchart TD
 
 登录鉴权真正落地在 NestJS 的 `auth` 模块：注册/登录由后端处理密码相关校验（前端只采集用户名），登录成功后签发 JWT 并将令牌态写入 Redis；后续每个请求携带 token，由 `JwtAuthGuard` 统一校验，未通过直接 401。
 
-### 6.1 JWT 签发与校验
+### JWT 签发与校验
 
 - 登录接口校验凭证（密码哈希比对等由后端完成），通过后用 `jsonwebtoken` 签发 JWT，并将令牌态（登录会话态）写入 **Redis**（可主动吊销、支持多端登录管理）。
 - 请求进入时由 `JwtStrategy`（`passport-jwt`）解析并校验 token，把 payload（用户标识等）挂到请求对象，供后续 Controller / Service 使用。
 
-### 6.2 守卫与策略踩坑
+### 守卫与策略踩坑
 
 ::: warning 必须注意的实现坑
 - `JwtStrategy` 的 `Strategy` 要从 **`passport-jwt`** 导入，而不是 `passport-local`，否则会错误地进入 local 策略，导致鉴权链路跑偏。
 - `JwtAuthGuard` 是**独立守卫**，用 `@UseGuards(JwtAuthGuard)` 显式挂载（等价于 `AuthGuard('jwt')`）。要明确它是单独守卫，不要和业务守卫混用。
 :::
 
-### 6.3 鉴权流程
+### 鉴权流程
 
 ```mermaid
 sequenceDiagram

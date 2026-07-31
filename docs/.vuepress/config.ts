@@ -6,14 +6,14 @@ import { registerComponentsPlugin } from "@vuepress/plugin-register-components";
 import { viteBundler } from "@vuepress/bundler-vite";
 
 export default defineUserConfig({
-  base: "/projectDemo/",
+  base: "/project/",
 
   lang: "zh-CN",
-  title: "项目demo",
+  title: "项目",
 
   bundler: viteBundler(),
 
-  head: [["link", { real: "icon", href: "/projectDemo/favicon.ico" }]], // 配置网站图标
+  head: [["link", { real: "icon", href: "/project/favicon.ico" }]], // 配置网站图标
 
   theme,
 

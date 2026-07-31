@@ -8,7 +8,7 @@ category:
 
 # 介绍
 
-## 产品定位
+## 产品介绍
 
 **语图是一款支持自然语言生成流程图的 Agent。** 它并非"大模型 + 提示词"的简单封装，而是将流程图生成拆解为一条有记忆、能调用工具、可自我反思校验的 Agent 工作流——用户输入业务需求，Agent 自主完成语义结构生成经前端解析转换为 JSON 并渲染到画布。
 
@@ -16,9 +16,14 @@ category:
 把"用文字描述流程"变成"画布上的合规流程图"，并把不可控的大模型输出，收敛为可渲染、可校验、可增量修改的确定性数据结构。
 :::
 
-### 它解决什么问题
+### 核心功能
 
-AI 让获取知识变得很容易，但大模型的回复通常是大段文字——当问题复杂时，用户理清、理解这些回复本身就需要耗费大量精力。语图提供了一个解法：将大模型的长文本回复输入 Agent，由 Agent 总结提炼、整理为图表形式呈现，把"读长文"变成"看流程图"，显著降低理解成本。
+生成后的流程图提供两种更新方式，覆盖"自动生成 + 人工精修"的完整闭环：
+
+- **AI对话生成**：在对话框中输入需求，系统自动在画布中生成流程图
+- **AI 对话修改（增量生成）**：在对话框中描述修改意图，系统自动改写画布中的流程图
+- **拖拉拽（人工精修）**：在画布中直接对 AI 生成的流程图做二次编辑、调整布局与样式
+- **项目管理**：支持项目创建、删除、编辑
 
 ### 应用方向
 
@@ -26,15 +31,6 @@ AI 让获取知识变得很容易，但大模型的回复通常是大段文字�
 
 - **作为子 Agent 集成**：探索将当前的 Agent 作为子 Agent，集成到更大的系统中（如知识管理平台、企业协作工具），为宿主系统提供"文本→流程图"的可视化能力，这也是潜在的变现路径。
 - **导出与跨文档集成**：支持将生成的流程图导出为通用图形格式，方便嵌入到其他文档、报告、Wiki 中，让图表成为知识传递的载体。
-
-### 核心功能
-
-生成后的流程图提供两种更新方式，覆盖"自动生成 + 人工精修"的完整闭环：
-
-- **AI对话生成**：**在对话框中输入需求，系统自动在画布中生成流程图**
-- **AI 对话修改（增量生成）**：在对话框中描述修改意图，系统自动改写画布中的流程图
-- **拖拉拽（人工精修）**：在画布中直接对 AI 生成的流程图做二次编辑、调整布局与样式
-- **项目管理**：支持项目创建、删除、编辑
 
 ## 架构总览
 
@@ -107,6 +103,42 @@ AI 让获取知识变得很容易，但大模型的回复通常是大段文字�
 
 ## 核心数据结构
 
+系统的数据结构分四层：业务领域模型（持久化实体）、AI 中间结构（模型↔代码）、渲染目标结构（代码↔画布）、运行时 State（LangGraph 执行）与记忆画像。
+
+### 业务领域模型
+
+```typescript
+// 项目
+interface Project {
+  id: string;
+  name: string;
+  description?: string;
+  ownerId: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+// 用户
+interface User {
+  id: string;
+  username: string;
+  email: string;
+  avatar?: string;
+}
+
+// 流程图文档：X6 序列化后的完整 JSON，含坐标、样式、ports
+// 持久化于 PostgreSQL JSONB，通过 projectId 关联项目
+interface FlowchartDocument {
+  id: string;
+  projectId: string;
+  cells: unknown[]; // X6 cells 数组，节点 + 边
+  metadata: {
+    version: number;
+    updatedAt: string;
+  };
+}
+```
+
 ### AI 中间结构（模型输出，仅语义）
 
 模型不输出 X6 完整 JSON，只输出"描述流程语义的中间结构"，由前端程序化转接为 X6 数据。坐标与样式全部交给确定性代码。
@@ -144,10 +176,41 @@ interface FlowEdge {
 // 3) 拼装注册到画布
 ```
 
+### 渲染目标结构
+
+FlowDraft 经前端转换层生成 X6 完整 JSON（含坐标、样式、ports、zIndex），作为画布渲染的输入。编辑器保存时，X6 JSON 序列化后存入 PostgreSQL JSONB。
+
+```typescript
+// X6 渲染目标结构（前端转换层输出，画布输入）
+// 完整结构见 editor.md，此处为接口示意
+interface X6GraphData {
+  cells: Array<X6Node | X6Edge>;
+}
+
+interface X6Node {
+  id: string;
+  shape: string;
+  position: { x: number; y: number };
+  size: { width: number; height: number };
+  attrs: Record<string, unknown>;
+  ports?: Record<string, unknown>;
+}
+
+interface X6Edge {
+  id: string;
+  shape: "edge";
+  source: string;
+  target: string;
+  attrs?: Record<string, unknown>;
+}
+```
+
 ### 记忆与画像结构
 
 ```typescript
-// 短期记忆：结构化 JSON（LangGraph Checkpointer 维护 State）
+// 短期记忆索引：由 BaseMessage[] 派生的轻量特征层
+// Checkpointer 负责 State 持久化，TurnRecord 在此基础上补充 intent、topicId 等特征
+// 用于话题漂移检测和记忆检索，不独立写入
 interface TurnRecord {
   turnId: number;
   role: "user" | "assistant";
@@ -188,18 +251,41 @@ interface UserProfile {
 }
 ```
 
+### 接口契约类型
+
+```typescript
+// 意图类型
+type IntentType = "generate" | "modify" | "consult";
+
+// 反思校验结果
+interface ReflectionResult {
+  passed: boolean;
+  category?: "format" | "structure" | "semantic";
+  message?: string; // 失败原因，供 Rewriter 修正用
+}
+
+// 工具调用结果
+interface ToolResult {
+  status: "success" | "error";
+  toolName: string;
+  data?: unknown;      // 成功时的结构化返回
+  error?: ToolError;   // 失败时的结构化错误（见 tool-calling.md）
+}
+```
+
 ### LangGraph State 定义
 
 ```typescript
 // LangGraph 状态图的核心 State 结构
 interface AgentState {
-  messages: BaseMessage[]; // 对话消息历史
-  intent?: IntentType; // 意图识别结果
-  flowDraft?: FlowDraft; // 生成结果（中间结构）
+  messages: BaseMessage[];        // 对话消息历史（LangChain MessagesState）
+  intent?: IntentType;             // 意图识别结果
+  flowDraft?: FlowDraft;           // 生成结果（中间结构）
+  canvasContext?: FlowDraft;       // modify 场景注入当前画布语义结构（带 ID），供模型复用
   reflectionResult?: ReflectionResult; // 反思校验结果
-  userProfile?: UserProfile; // 用户画像（按需注入）
-  rollingSummary?: string; // 滚动摘要
-  toolResults?: ToolResult[]; // 工具调用结果
+  userProfile?: UserProfile;       // 用户画像（按需注入）
+  rollingSummary?: string;         // 滚动摘要
+  toolResults?: ToolResult[];      // 工具调用结果
 }
 ```
 

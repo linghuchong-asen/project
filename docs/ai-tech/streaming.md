@@ -8,7 +8,7 @@ category:
 
 # 流式输出
 
-## 9.1 核心设计：思考流式 + 数据一次性
+## 核心设计：思考流式 + 数据一次性
 
 语图的生成链路产出两类内容，消费特征完全不同：
 
@@ -38,7 +38,7 @@ category:
 
 **职责边界**：SSE 管展示层（给人看），fetch 管数据层（给程序用）。两者耦合只有一个点——SSE 关闭后前端发起 fetch。
 
-## 9.2 CoT 思考流式推送（SSE + takeUntil）
+## CoT 思考流式推送（SSE + takeUntil）
 
 SSE 连接专用于推送 `<thinking>` 标签内的 token。后端用 RxJS Observable 承载 token 流，`@Sse()` 消费。
 
@@ -79,7 +79,7 @@ function startThinkStream(threadId: string): Promise<void> {
 
 连接关闭时（思考结束或用户离开）`takeUntil(abort$)` 终止 Observable，不浪费 token。
 
-## 9.3 FlowDraft 完整拉取（fetch）
+## FlowDraft 完整拉取（fetch）
 
 思考 SSE 关闭后，前端用 fetch 一次性拉完整 JSON。如果生成尚未完成，后端返回 `202` + `Retry-After`，前端轮询。
 
@@ -126,7 +126,7 @@ renderToCanvas(flowDraft);
 SSE 关闭 = 思考过程结束 = 模型输出已经进入 `<output>` 阶段。但 JSON 也可能还没写完（思考标签闭合后还有几百个 token 的 JSON 要生成）。用轮询而非"SSE 关闭即捞"更稳妥，重试最多一次就到了。
 :::
 
-## 9.4 LangGraph 事件流对接
+## LangGraph 事件流对接
 
 生成节点通过 LangGraph 的 `astream_events()` 拿到 token 流，按标签状态分发到不同分支：
 
@@ -165,7 +165,7 @@ async *getThinkingTokens(threadId: string) {
 
 `on_chat_model_stream` 只用于思考过程的实时推送。FlowDraft 的完整 JSON 不从这里拿，而是由 `on_chain_end`（generate 节点完成事件）把 `flowDraft` 写入 State，供 `GET /api/ai/result/:id` 读取。两者数据源分离。
 
-## 9.5 Prompt 标签约定
+## Prompt 标签约定
 
 模型在同一个回复中先输出 `<thinking>` 再输出 `<output>`。token 序列天然是从思考到结果——自回归生成机制决定了 `<thinking>` 在前的 token 先生成。
 
@@ -195,7 +195,7 @@ async *getThinkingTokens(threadId: string) {
 LLM 是逐 token 自回归的。`<thinking>` 在 prompt 里写在 `<output>` 前面，模型就必然先产出思考内容、再产出 JSON。思考 token 写进 KV Cache 后，后续 JSON 生成时注意力能"看到"思考过程——这是真正的 CoT，不是前端障眼法。
 :::
 
-## 9.6 连接生命周期与泄露防护
+## 连接生命周期与泄露防护
 
 两个连接各自独立管理生命周期：
 
@@ -214,7 +214,7 @@ return stream.pipe(takeUntil(abort$));
 
 fetch 侧不需要特殊防护——单次 REST 请求天然不会泄露。
 
-## 9.7 对话接口：启动生成
+## 对话接口：启动生成
 
 `POST /api/ai/chat` 的职责是接收用户输入、启动 LangGraph 工作流、立即返回 `threadId`。不等待生成完成。
 

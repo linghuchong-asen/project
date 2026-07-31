@@ -62,6 +62,110 @@ type NodeType = "start" | "end" | "process" | "decision" | "io" | "subprocess";
 // 3) 拼装注册到画布
 ```
 
+### 节点类型映射表
+
+上面转换步骤 ② 用的映射表。`NodeType` → X6 节点配置（shape / size / attrs / ports），前端转换层查这张表为每个 `FlowNode` 生成对应的 X6 节点。
+
+| NodeType | 形状 | 配色（antd 色板） | 默认尺寸 | Ports 方向 |
+| --- | --- | --- | --- | --- |
+| start | 椭圆 | 绿 `#52C41A` / `#389E0D` | 120×50 | bottom |
+| end | 椭圆 | 红 `#F5222D` / `#CF1322` | 120×50 | top |
+| process | 圆角矩形 | 蓝 `#1890FF` / `#096DD9` | 140×50 | top / right / bottom / left |
+| decision | 菱形（polygon） | 橙 `#FAAD14` / `#D48806` | 140×80 | top / right / bottom / left |
+| io | 平行四边形（polygon） | 紫 `#722ED1` / `#531DAB` | 140×50 | top / bottom |
+| subprocess | 圆角矩形（双线框） | 青 `#13C2C2` / `#08979C` | 140×50 | top / right / bottom / left |
+
+```typescript
+// 端口组定义：四个方向各一个连接磁吸点
+const PORT_GROUPS = {
+  top:    { position: 'top',    attrs: { circle: { r: 3, magnet: true, fill: '#fff', stroke: '#5b8ffa' } } },
+  right:  { position: 'right',  attrs: { circle: { r: 3, magnet: true, fill: '#fff', stroke: '#5b8ffa' } } },
+  bottom: { position: 'bottom', attrs: { circle: { r: 3, magnet: true, fill: '#fff', stroke: '#5b8ffa' } } },
+  left:   { position: 'left',   attrs: { circle: { r: 3, magnet: true, fill: '#fff', stroke: '#5b8ffa' } } },
+};
+
+// 节点类型 → X6 节点配置映射表
+const NODE_TYPE_CONFIG: Record<NodeType, {
+  shape: string;
+  width: number;
+  height: number;
+  fill: string;
+  stroke: string;
+  radius?: number;
+  refPoints?: string;       // polygon 顶点，用于菱形 / 平行四边形
+  strokeWidth?: number;
+  portItems: string[];      // 启用哪些方向的 port
+}> = {
+  start: {
+    shape: 'ellipse',
+    width: 120, height: 50,
+    fill: '#52C41A', stroke: '#389E0D',
+    portItems: ['bottom'],
+  },
+  end: {
+    shape: 'ellipse',
+    width: 120, height: 50,
+    fill: '#F5222D', stroke: '#CF1322',
+    portItems: ['top'],
+  },
+  process: {
+    shape: 'rect',
+    width: 140, height: 50,
+    fill: '#1890FF', stroke: '#096DD9', radius: 8,
+    portItems: ['top', 'right', 'bottom', 'left'],
+  },
+  decision: {
+    shape: 'polygon',
+    width: 140, height: 80,
+    fill: '#FAAD14', stroke: '#D48806',
+    refPoints: '0,40 70,0 140,40 70,80',  // 菱形顶点
+    portItems: ['top', 'right', 'bottom', 'left'],
+  },
+  io: {
+    shape: 'polygon',
+    width: 140, height: 50,
+    fill: '#722ED1', stroke: '#531DAB',
+    refPoints: '20,0 140,0 120,50 0,50',  // 平行四边形顶点
+    portItems: ['top', 'bottom'],
+  },
+  subprocess: {
+    shape: 'rect',
+    width: 140, height: 50,
+    fill: '#13C2C2', stroke: '#08979C', radius: 8, strokeWidth: 2,
+    portItems: ['top', 'right', 'bottom', 'left'],
+  },
+};
+
+// 转换函数：FlowNode + 映射表 → X6 节点配置
+function toX6Node(node: FlowNode, x: number, y: number) {
+  const cfg = NODE_TYPE_CONFIG[node.type];
+  return {
+    id: node.id,
+    shape: cfg.shape,
+    position: { x, y },
+    size: { width: cfg.width, height: cfg.height },
+    attrs: {
+      body: {
+        fill: cfg.fill,
+        stroke: cfg.stroke,
+        radius: cfg.radius,
+        refPoints: cfg.refPoints,
+        strokeWidth: cfg.strokeWidth ?? 1,
+      },
+      label: { text: node.label, fill: '#fff', fontSize: 14 },
+    },
+    ports: {
+      groups: PORT_GROUPS,
+      items: cfg.portItems.map(dir => ({ group: dir, id: `port-${dir}` })),
+    },
+  };
+}
+```
+
+::: tip 为什么 start / end 只给 1-2 个 port
+start 是流程起点，只往外连线（bottom）；end 是终点，只往里连线（top）。多余 port 会让布局算法产生跨层连线，降低可读性。decision / process / subprocess 给全 4 向 port，因为它们是分支和汇聚的枢纽。
+:::
+
 ### Token 优化（前端视角）
 
 中间结构的引入同时是前端渲染稳定性的关键，也是 Token 优化的关键：

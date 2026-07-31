@@ -51,9 +51,10 @@ stateDiagram-v2
 ```typescript
 // LangGraph 状态图的核心 State 结构
 interface AgentState {
-  messages: BaseMessage[];        // 对话消息历史
+  messages: BaseMessage[];        // 对话消息历史（LangChain MessagesState）
   intent?: IntentType;             // 意图识别结果
   flowDraft?: FlowDraft;           // 生成结果（中间结构）
+  canvasContext?: FlowDraft;       // modify 场景注入当前画布语义结构（带 ID），供模型复用
   reflectionResult?: ReflectionResult; // 反思校验结果
   userProfile?: UserProfile;       // 用户画像（按需注入）
   rollingSummary?: string;         // 滚动摘要

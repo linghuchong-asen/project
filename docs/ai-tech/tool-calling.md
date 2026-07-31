@@ -14,7 +14,7 @@ RAG / Function Call / MCP / Skill 在本系统中被统一抽象为**提示词�
 RAG、Function Call、MCP 都是广义上的提示词工程——调用外部数据，然后将外部数据和用户提问结合起来发送给大模型。RAG 是从知识库获取数据，Function Call 是大模型具备调用外部数据的能力，MCP 在 Function Call 基础上制定了调用外部数据的标准，支持了上下文管理。
 :::
 
-## 5.1 工具形态
+## 工具形态
 
 | 形态 | 定位 | 本系统用法 | 上下文管理 |
 |------|------|-----------|:----------:|
@@ -32,7 +32,7 @@ RAG、Function Call、MCP 都是广义上的提示词工程——调用外部数
 | 创建方式 | 可以用 Markdown 创建 | 要提供 schema json |
 | 独立性 | 依附于客户端 | 更加独立，是外部系统对大模型暴露的接口 |
 
-## 5.2 内置 Skill：TemplateMatcher
+## 内置 Skill：TemplateMatcher
 
 - 用户说"画一个标准的请假流程"→ 模型调用 TemplateMatcher 命中模板**直接返回**，不从零生成
 - 用户说"画请假流程，外包和正式员工分开审批"→ 模型判断有**定制需求**，跳过模板走正常生成
@@ -65,7 +65,7 @@ const TOOLS_SCHEMA = [
 ];
 ```
 
-## 5.3 ToolNode 适配层
+## ToolNode 适配层
 
 以 LangGraph `ToolNode` 作为工具调用的**适配器/中间件**：封装调用、结果归一化、错误结构化与重试/降级。所有工具经统一出口，便于观测与治理。
 
@@ -99,7 +99,7 @@ LangGraph 没有把工具调用黑盒化，而是将工具执行的权力交还�
 - **并行执行**：多个 `tool_calls` 自动并发
 - **容错定制**：通过自定义节点实现"异常翻译器"，确保模型永远收到干净、结构化的反馈
 
-## 5.4 失败分类与降级（确定性处理）
+## 失败分类与降级（确定性处理）
 
 工具失败**绝不把原始错误直接丢给模型**，而是先转为**结构化错误**：
 
@@ -163,7 +163,7 @@ def enterprise_tool_engine(state):
     return {"messages": results}
 ```
 
-## 5.5 上下文与结果截断
+## 上下文与结果截断
 
 ### context_id
 
@@ -200,7 +200,7 @@ whitelist = ["name", "phone", "id"]
 clean_data = {k: raw_json[k] for k in whitelist if k in raw_json}
 ```
 
-## 5.6 MCP 协议细节
+## MCP 协议细节
 
 MCP（Model Context Protocol）基于 JSON-RPC 2.0 标准协议：
 
@@ -247,7 +247,7 @@ MCP（Model Context Protocol）基于 JSON-RPC 2.0 标准协议：
 { "jsonrpc": "2.0", "method": "weather_query", "params": {"city": "北京"} }
 ```
 
-## 5.7 调用可靠性保障
+## 调用可靠性保障
 
 - **超时重试**：通过超时机制避免服务不可用导致的调用失败
 - **错误熔断**：对高频调用场景添加限流策略防止接口过载

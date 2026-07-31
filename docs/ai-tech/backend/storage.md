@@ -25,7 +25,7 @@ category:
 
 PG 一身多职，覆盖四种数据形态：
 
-### 2.1 AI 记忆与画像
+### AI 记忆与画像
 
 - **Checkpointer（短期）**：`PostgresSaver` 按 thread_id 存每轮 State。
 - **Store（长期）**：`PostgresStore` 按命名空间存记忆摘要 + 向量（BGE-M3，1024 维）+ 关键词。
@@ -33,18 +33,18 @@ PG 一身多职，覆盖四种数据形态：
 
 为何选 PG 而非单纯 Redis 存记忆：需要"向量检索 + 结构化过滤 + 事务"三者兼具，pgvector 在 PG 内一步到位，少一个组件就少一处一致性问题。
 
-### 2.2 编辑器文档（JSONB）
+### 编辑器文档（JSONB）
 
 流程图是变结构文档，X6 序列化后的 JSON 含坐标、样式、ports 等。PG 的 **JSONB** 类型天然支持变结构文档存储，且能对 JSON 内字段建 GIN 索引做查询——替代了原先 MongoDB 的角色。
 
 - 编辑器点"保存"时，把 X6 JSON 存入 PG 的 JSONB 列。
 - 文档增加 `projectId` 字段，项目管理页通过 `projectId` 反查文档。
 
-### 2.3 项目/用户管理（关系表）
+### 项目/用户管理（关系表）
 
 项目、用户等结构化数据用 PG 的关系表存储。后端负责查询分页处理：项目列表接口做分页（pageSize/pageNumber）。
 
-### 2.4 全文检索（tsvector + GIN）
+### 全文检索（tsvector + GIN）
 
 项目管理模块的搜索同时支持**项目名称**与**项目内容**检索，用 PG 内置的全文检索能力替代独立搜索引擎：
 

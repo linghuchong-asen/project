@@ -7,7 +7,7 @@ export const sidebar_hope = sidebar({
       text: "AI",
       collapsible: true,
       children: [
-        { text: "编排运行时", link: "/ai-tech/backend/ai-runtime.html" },
+        { text: "编排运行时", link: "/ai-tech/ai-runtime.html" },
         { text: "记忆管理", link: "/ai-tech/memory.html" },
         { text: "意图识别", link: "/ai-tech/intent.html" },
 
@@ -16,8 +16,7 @@ export const sidebar_hope = sidebar({
         { text: "评估与可观测性", link: "/ai-tech/evaluation.html" },
         { text: "上下文管理", link: "/ai-tech/context.html" },
         { text: "安全", link: "/ai-tech/security.html" },
-        { text: "工程化踩坑与质量属性", link: "/ai-tech/engineering.html" },
-        { text: "附录", link: "/ai-tech/appendix.html" },
+        { text: "质量属性", link: "/ai-tech/engineering.html" },
       ],
     },
     {
