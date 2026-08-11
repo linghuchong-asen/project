@@ -49,7 +49,7 @@ Prompt 注入是指用户通过精心构造的输入，试图覆盖 System Promp
 
 ### 错误信息脱敏
 
-所有工具执行结果经过**结构化转换层**，原始错误被替换为对模型安全的摘要：
+所有工具执行结果经过**结构化转换层**，原始错误被替换为对模型安全的摘要（完整的失败分类、重试与降级策略见[工具调用](./tool-calling.md#失败分类与降级确定性处理)）：
 
 ```typescript
 // 原始错误（不暴露给模型）
@@ -103,4 +103,4 @@ Agent 能调用的工具（Function Call / Skill / MCP）是攻击面最大的�
 - [ ] 跨项目/跨用户数据隔离已测试
 :::
 
-- 相关：[评估与可观测性](./evaluation.md) · [后端概述](./backend/index.md) · [工程化踩坑](./engineering.md)
+- 相关：[评估与可观测性](./evaluation.md) · [后端概述](./backend/index.md) · [质量属性](./engineering.md)

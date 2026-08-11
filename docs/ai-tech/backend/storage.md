@@ -10,7 +10,7 @@ category:
 
 语图采用**统一存储**策略：PostgreSQL 一身多职——关系能力（用户/项目表）、JSON 能力（编辑器文档、长期记忆）、向量能力（pgvector 语义检索）、全文检索能力（tsvector + GIN 索引），搭配 Redis 处理鉴权与登录会话态（JWT 令牌态）。只需维护两个数据服务，降低运维复杂度和跨库一致性问题。
 
-## 1. 存储分层总览
+## 存储分层总览
 
 | 存储 | 职责 | 备注 |
 | --- | --- | --- |
@@ -21,7 +21,7 @@ category:
 所有业务数据与 AI 数据统一落在 **PostgreSQL + pgvector**：项目/用户用关系表，编辑器文档用 JSONB，AI 长期记忆用 Store + pgvector 向量列，全文检索用 tsvector + GIN 索引。Redis 仅负责登录鉴权（JWT 令牌态）和可选的短期记忆(Checkpointer)缓存。两个数据服务覆盖全部场景，不再引入 MongoDB、MySQL、Elasticsearch 等独立组件。
 :::
 
-## 2. PostgreSQL + pgvector（统一数据层）
+## PostgreSQL + pgvector（统一数据层）
 
 PG 一身多职，覆盖四种数据形态：
 
@@ -54,12 +54,12 @@ PG 一身多职，覆盖四种数据形态：
 
 语义检索（"找类似流程图"）则走 pgvector 向量相似度——PG 内一个查询就能同时做全文匹配和语义召回。
 
-## 3. Redis（鉴权与登录会话态）
+## Redis（鉴权与登录会话态）
 
 - **登录会话态（JWT 令牌态）**：登录后 token 或会话标记落 Redis，守卫校验时查 Redis。
 - **短期记忆态（Checkpointer，可选）**：高并发下可把短期记忆态放 Redis（RedisSaver），语图主用 PG。
 
-## 4. 后端环境变量示例
+##  后端环境变量示例
 
 ```shell
 # postgresql
@@ -75,7 +75,7 @@ REDIS_PORT = 6379
 REDIS_PASSWD = 123456
 ```
 
-## 5. 数据持久化策略
+## 数据持久化策略
 
 - PG 统一存储所有业务数据与 AI 数据，无跨库一致性问题——编辑器文档与项目表同库，通过 `projectId` 直接 JOIN，不需要跨库协调。
 - JSONB 列支持对 JSON 内字段建 GIN 索引，变结构文档的查询性能有保障。

@@ -37,6 +37,45 @@ history = last K（近期原文） + summary（长期摘要） + 向量检索（
 
 用 LangGraph State 管理上下文，每个节点维护自己需要的部分，组装节点读取各部分拼成完整 context。
 
+### 上下文组装节点的内部结构
+
+上下文组装在状态图中是一个节点，但内部逻辑并不简单——记忆召回、策略判断、Schema 引导、Prompt 拼装都在这里。节点粒度 ≠ 函数粒度：节点内部通过 Service 函数模块化，对外是一个图节点。
+
+```typescript
+async function contextAssemblyNode(state: AgentState): Promise<Partial<AgentState>> {
+  // 1. 记忆召回策略：根据 intent 决定召回什么
+  const strategy = memoryService.getRecallStrategy(state.intent);
+
+  // 2. 短期记忆：Checkpointer 取最近 K 轮（按 token 预算）
+  const shortTerm = await memoryService.recallShortTerm(state.threadId, budget);
+
+  // 3. 长期记忆：Store 向量检索（generate/modify）
+  const longTerm = strategy.needLongTerm
+    ? await memoryService.recallLongTerm(state.projectId, state.messages, strategy)
+    : null;
+
+  // 4. 用户画像：按需注入（个性化推荐、风格调整等场景）
+  const profile = strategy.needProfile
+    ? await memoryService.recallProfile(state.userId)
+    : null;
+
+  // 5. Schema 引导：按意图组装输出 schema
+  const schema = schemaService.getOutputSchema(state.intent);
+
+  // 6. 画布上下文：modify 场景注入
+  const canvasContext = state.intent === 'modify' ? state.canvasContext : null;
+
+  // 7. Prompt 拼装 + Token 预算控制
+  const prompt = promptService.assemble({
+    shortTerm, longTerm, profile, schema, canvasContext, userInput: state.messages.at(-1)
+  });
+
+  return { context: prompt };
+}
+```
+
+记忆逻辑有独立的 Service 层（`memoryService`），可测试、可复用，但不作为图节点存在。如果记忆召回逻辑复杂到需要多源召回、重排序、去重、token 预算动态分配，这些都在 `memoryService` 内部实现——上下文组装节点只负责调用和编排，不承担记忆策略的实现细节。
+
 ### 差异化组装
 
 | 意图 | 是否注入画布内容 | 说明 |
@@ -47,13 +86,44 @@ history = last K（近期原文） + summary（长期摘要） + 向量检索（
 
 重要信息放输入开头或结尾（应对"lost-in-the-middle"现象）。
 
+### 输出 Schema 按意图动态注入
+
+generate 和 modify 场景下，模型看到的输出格式不同。意图识别节点确定 intent 后，系统在上下文组装阶段动态注入对应的 schema 段落：
+
+- **generate**：注入 FlowDraft 的输出 schema，模型从零生成完整的 `{ nodes: [], edges: [] }` 结构，不注入画布状态
+- **modify**：注入 ModifyPatchOutput 的输出 schema（详见[介绍 - Modify 场景输出结构](./index.md#modify-场景输出结构)），同时注入当前画布的语义摘要（只含 id、label、type 等关键字段，不含坐标样式），模型输出增量操作序列
+
+模型每次只看到一套 schema，不需要自己判断该用哪种格式，减少一个决策点就少一个出错的可能。
+
+```typescript
+function buildPrompt(intent: IntentType, userInput: string, graphState: FlowDraft | null) {
+  const base = '你是语图流程图助手。根据用户指令输出符合 schema 的 JSON。';
+
+  // schema 段落：根据意图二选一，模型只看到当前场景需要的格式
+  const schemaSection = intent === 'generate'
+    ? GENERATE_SCHEMA_PROMPT   // FlowDraft 输出格式说明 + 示例
+    : MODIFY_SCHEMA_PROMPT;    // ModifyPatchOutput 输出格式说明 + 示例
+
+  // 画布状态：仅 modify 时注入，只含关键字段
+  const canvasContext = intent === 'modify' && graphState
+    ? `\n当前画布语义摘要：\n${formatGraphSummary(graphState)}`
+    : '';
+
+  return `${base}\n${schemaSection}${canvasContext}\n\n用户指令：${userInput}`;
+}
+```
+
+::: tip 设计要点
+generate 场景的 prompt 中不出现 ModifyPatchOutput 的任何痕迹，modify 场景的 prompt 中不出现 FlowDraft 的格式说明。两套 schema 各自独立维护，互不干扰——给 modify 的 schema 加字段不会影响 generate 的 prompt 长度，反之亦然。
+:::
+
 ### Token 上限
 
 输入 token 卡在模型上下文上限的 **80%**。
 
 ```mermaid
 pie showData
-  title 上下文 token 占比（常态，合计 100%）
+  title 上下文 token 占比（modify 场景典型值，合计 100%）
   "记忆 40%" : 40
   "项目上下文 20%" : 20
   "用户输入 15%" : 15
@@ -62,7 +132,9 @@ pie showData
   "工具定义 5%" : 5
 ```
 
-哪部分畸高砍哪部分。
+::: warning 占比随意图变化
+上图为 modify 场景的典型分布（注入画布 + 召回记忆）。generate 场景无画布注入、首次对话无记忆召回，记忆占比会低很多；consult 场景以历史记忆为主，占比更高。实际占比由组装节点按 token 预算动态计算，哪部分畸高砍哪部分。
+:::
 
 ### Token 预算管理策略
 
@@ -109,26 +181,51 @@ pie showData
 - **summary**：取 1~3 条
 - **向量检索**：取 2~5 条高相似片段
 
-## 并行双路检索优化
+## System Prompt 示例
 
-向量召回和 LLM 首 token 推理可以并行启动：
+语图的 System Prompt 遵循"角色锚定 + 输出格式约束 + 安全边界"三段式结构：
 
+```text
+# 角色
+你是语图流程图生成助手。你的职责是根据用户的自然语言描述，
+生成流程图的语义结构（FlowDraft），不负责坐标计算和样式渲染。
+
+# 输出格式
+你必须先输出思考过程，再输出最终结果。格式如下：
+
+<thinking>
+从用户描述中识别出以下流程要素：
+- 角色/参与方：...
+- 流程步骤：...
+- 决策分支：...
+- 节点映射：共 N 个节点
+确认无遗漏后输出结果。
+</thinking>
+
+<output>
+{
+  "nodes": [
+    { "id": "n1", "label": "开始", "type": "start" },
+    { "id": "n2", "label": "提交申请", "type": "process" },
+    { "id": "n3", "label": "审批", "type": "decision" }
+  ],
+  "edges": [
+    { "id": "e1", "source": "n1", "target": "n2" },
+    { "id": "e2", "source": "n2", "target": "n3" }
+  ]
+}
+</output>
+
+# 约束
+- 节点 type 只能是：start | end | process | decision | io | subprocess
+- 决策节点必须有至少两条出边
+- 不输出坐标、样式、ports，这些由前端程序化生成
+- 你不会执行与流程图生成无关的任务
 ```
-0 ms: 用户请求进入
-  -> 协程 A：异步调用向量库（网络 IO）
-  -> 协程 B：提前做 LLM 前置流水线（tokenizer + GPU 排队）
-5 ms: 向量库返回结果 -> 替换占位符（纯 CPU，<0.2ms）
-21 ms: GPU 轮到本请求 -> 开始 forward
-```
 
-::: tip 关键结论
-向量召回和 LLM 首次 forward 是同时启动的；LLM 真正需要"外部知识"时已经是 20ms 之后，此时召回结果 100% 就绪。向量召回增量只有 2-3ms，被"藏"在 LLM 自己排队里的时间。
+::: tip 设计要点
+- **角色锚定**：开头和结尾都强调"流程图生成助手"身份，防止 Prompt 注入偏移
+- **CoT 内嵌**：`<thinking>` 标签要求模型先列拓扑再填细节，防漏节点
+- **格式硬约束**：枚举合法 type 值，配合 Zod Schema 兜底校验
+- **安全边界**：结尾声明不执行无关任务，是 Prompt 注入防御的一环（详见[安全](./security.md)）
 :::
-
-## 控制向量数据量
-
-| 策略 | 说明 |
-|------|------|
-| 窗口化 | 10 条对话存一次向量 |
-| 时间维度 | 3 个月之前的向量内容做摘要存入 PostgreSQL |
-| 向量降维 | 768 → 384 / 256 |

@@ -1,5 +1,5 @@
 <template>
-  <Teleport to="body">
+  <Teleport to="body" :disabled="!isMounted">
     <canvas ref="canvasEl" class="fluid-bg"></canvas>
   </Teleport>
 </template>
@@ -141,6 +141,7 @@ void main() {
 /* ─────────────── 组件逻辑 ─────────────── */
 
 const canvasEl = ref<HTMLCanvasElement | null>(null)
+const isMounted = ref(false)
 
 let gl: WebGLRenderingContext | null = null
 let rafId = 0
@@ -496,6 +497,9 @@ function onVisibilityChange() {
 }
 
 onMounted(() => {
+  // 启用 Teleport，将 canvas 移至 body（避免祖先元素的 CSS 包含块影响 fixed 定位）
+  isMounted.value = true
+
   // 标记 body，用于 CSS 透明化主题背景
   document.body.classList.add('has-fluid-bg')
 

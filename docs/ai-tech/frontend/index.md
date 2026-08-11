@@ -8,9 +8,9 @@ category:
 
 # 前端
 
-语图的前端不是"调接口的壳"，而是整个产品里**确定性与模型解耦**的关键执行层：模型只负责"这张图该长什么样"（语义），前端负责"怎么画出来"（坐标、样式、连线、渲染）。本页先说清前端在语图里的位置、技术选型与四大模块，后续《编辑器》再逐块展开。
+语图的前端不是"调接口的壳"，而是整个产品里**确定性与模型解耦**的关键执行层：模型只负责"这张图该长什么样"（语义），前端负责"怎么画出来"（坐标、样式、连线、渲染）。
 
-## 1. 技术选型
+## 技术选型
 
 | 模块      | 技术                | 职责                                                   |
 | --------- | ------------------- | ------------------------------------------------------ |
@@ -20,7 +20,7 @@ category:
 | 自动布局  | @antv/layout        | 层级布局算法计算节点坐标                               |
 | 流式通信  | SSE（EventSource）  | 对话接口流式推送，逐 token 渲染 AI 思考与生成内容      |
 
-## 2. 四大前端模块
+##  四大前端模块
 
 | 模块        | 技术                    | 说明                                                       |
 | ----------- | ----------------------- | ---------------------------------------------------------- |
@@ -32,7 +32,7 @@ category:
 1. **拖拉拽**：用户在 X6 画布上手动创建和编辑流程图。
 2. **AI 生成**：用户通过对话窗输入自然语言，AI 自动生成流程图（支持 generate / modify / consult 三种意图）。
 
-## 3. 确定性优先在前端的落地
+##  确定性优先在前端的落地
 
 贯穿整个产品的核心思想是 **「确定性程序 → 小模型 → 大模型」** 的分层降级。在前端这一层，最典型的表现是**中间数据结构（FlowDraft）**：
 
@@ -178,7 +178,7 @@ start 是流程起点，只往外连线（bottom）；end 是终点，只往里�
 
 X6 完整 JSON 有多臃肿？一个简单的 2 节点 1 边图，X6 序列化后约 500 行 JSON，其中每个节点约 20 个 port 定义、坐标、样式细节——这些在前端转换层由确定性代码生成，不需要模型操心。
 
-## 4. 前端模块结构图
+## 前端模块结构图
 
 ```mermaid
 graph TB
@@ -202,7 +202,7 @@ graph TB
   PM --> Server
 ```
 
-## 5. 端到端数据流（前端视角）
+## 端到端数据流（前端视角）
 
 ```mermaid
 flowchart TD
@@ -216,10 +216,98 @@ flowchart TD
 ```
 
 ::: warning 编辑器的能力边界
-编辑器的定位是"为展示做一个流程图效果的模板"，本质是工具；具体怎么展示（是否对接实时数据状态）由数据汇聚平台决定。编辑器**无法**对接数据库数据、实时显示数据是否正常状态——这类实时态由数据汇聚平台展示侧负责。两者职责要做到清晰切分。
+编辑器的定位是流程图编辑工具：提供画布编辑、节点增删改、连线、样式调整等能力，并负责图形的持久化。编辑器**不做**实时数据对接——不负责对接数据库实时状态、不负责展示实时数据是否正常。图形编辑与数据展示是两个独立的职责。
 :::
 
-## 6. 相关页面
+## Modify 场景的前端处理（新增）
+
+> 本节为 modify 增量 patch 方案的前端落地说明，与上方 generate 流程并行阅读。
+
+modify 场景下，AI 返回的数据结构不再是 FlowDraft（完整节点/边数组），而是 `ModifyPatchOutput`（增量操作序列）。前端需要新增一套 patch 应用逻辑，与 generate 的全量渲染并行存在。
+
+### 两种数据结构对比
+
+| 场景 | 数据结构 | 前端处理 | 画布行为 |
+|------|---------|---------|---------|
+| generate | `FlowDraft { nodes[], edges[] }` | layout → 映射 → 全量渲染 | 替换整个画布 |
+| modify | `ModifyPatchOutput { operations[] }` | 逐条应用 patch | 增量更新现有画布 |
+
+### 操作类型与 X6 API 映射
+
+前端收到 `ModifyPatchOutput` 后，按 operation 类型调用对应的 X6 API：
+
+```typescript
+function applyPatch(graph: Graph, patch: ModifyPatchOutput) {
+  for (const op of patch.operations) {
+    switch (op.op) {
+      case 'modify_node': {
+        const node = findNodeByTarget(graph, op.target);
+        if (op.semantic?.label) node.setAttrs({ label: { text: op.semantic.label } });
+        if (op.visual) applyNodeVisual(node, op.visual);
+        break;
+      }
+      case 'add_node': {
+        const pos = calcRelativePosition(op.position, graph);
+        const node = toX6Node(op.semantic, pos.x, pos.y);
+        graph.addNode(node);
+        break;
+      }
+      case 'delete_node': {
+        const node = findNodeByTarget(graph, op.target);
+        graph.removeCell(node); // 级联删除关联边
+        break;
+      }
+      case 'add_edge': {
+        const source = graph.getNodeByLabel(op.semantic.source.label);
+        const target = graph.getNodeByLabel(op.semantic.target.label);
+        graph.addEdge({ source: source.id, target: target.id, label: op.semantic.label });
+        break;
+      }
+      case 'delete_edge': {
+        const edge = findEdgeByTarget(graph, op.target);
+        graph.removeCell(edge);
+        break;
+      }
+      case 'modify_edge': {
+        const edge = findEdgeByTarget(graph, op.target);
+        if (op.semantic?.label) edge.setLabels([{ attrs: { label: { text: op.semantic.label } } }]);
+        if (op.visual) applyEdgeVisual(edge, op.visual);
+        break;
+      }
+      case 'reposition': {
+        const node = findNodeByTarget(graph, op.target);
+        const pos = calcRelativePosition(op.position, graph);
+        node.setPosition(pos.x, pos.y);
+        break;
+      }
+    }
+  }
+}
+```
+
+### 视觉 patch 到 X6 attrs 的映射
+
+`NodeVisualPatch` 中的高层语义字段（`fillColor`、`borderColor` 等）需要映射为 X6 的 attrs 路径：
+
+```typescript
+function applyNodeVisual(node: Node, visual: NodeVisualPatch) {
+  const attrs: Record<string, unknown> = {};
+  if (visual.fillColor)    attrs.body = { ...attrs.body, fill: visual.fillColor };
+  if (visual.borderColor)  attrs.body = { ...attrs.body, stroke: visual.borderColor };
+  if (visual.borderWidth)  attrs.body = { ...attrs.body, strokeWidth: visual.borderWidth };
+  if (visual.borderStyle === 'dashed') attrs.body = { ...attrs.body, strokeDasharray: '5 5' };
+  if (visual.fontColor)    attrs.label = { ...attrs.label, fill: visual.fontColor };
+  if (visual.fontSize)     attrs.label = { ...attrs.label, fontSize: visual.fontSize };
+  if (visual.fontWeight)   attrs.label = { ...attrs.label, fontWeight: visual.fontWeight };
+  node.setAttrs(attrs);
+}
+```
+
+::: tip 关键区别
+generate 场景前端拿到 FlowDraft 后走 layout → 映射 → 全量渲染，画布被替换。modify 场景前端拿到 ModifyPatchOutput 后逐条应用 patch，**画布上未被 patch 涉及的节点保持原样**——包括用户手动调整的坐标与样式。
+:::
+
+##  相关页面
 
 - [编辑器（AntV X6）](./editor.md)：画布能力、undo/redo、数据管理、导入导出
 - [登录鉴权](../backend/auth.md)：表单、头像、token 携带、JWT 校验

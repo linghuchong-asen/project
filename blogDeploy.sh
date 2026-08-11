@@ -1,5 +1,6 @@
-cd blog
 set -e
+pnpm docs:build
+cd blog
 git init
 git config user.email '374688995@qq.com'
 git add .

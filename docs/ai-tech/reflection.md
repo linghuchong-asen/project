@@ -30,6 +30,8 @@ flowchart TD
 Qwen 偶尔会在 JSON 前面加一段解释文字，或者输出的 JSON 里节点 ID 重复。靠 System Prompt 约束不够，用 Zod Schema 校验兜底。引入中间表示层后这个问题缓解很多——语义结构比 X6 JSON 简单，模型出错空间本身就小。
 :::
 
+对于 modify 场景，Zod 的校验范围从 FlowDraft 的格式合法性扩展到 patch 的字段级语义约束。具体来说，modify 的 Zod Schema 除了验证 JSON 结构完整，还覆盖三类字段级校验：枚举值约束（`nodeType` 必须在 `start | end | process | decision | io | subprocess` 范围内，`borderStyle` 必须在 `solid | dashed | dotted` 范围内）、目标存在性校验（`target.label` 必须引用当前画布中实际存在的节点，防止模型幻觉出不存在的元素）、值域限制（`borderWidth` 限定 1-5 的整数，`fontSize` 限定离散字号）。校验失败时，错误信息精确到具体字段和 operation 索引（如"operations[0].visual.fillColor: 不是合法的 hex 颜色值"），供 Rewriter 做定向修正，无需重新生成整个 patch。
+
 ### ② 结构合理性
 
 图遍历**确定性判定**：
@@ -54,23 +56,25 @@ Qwen 偶尔会在 JSON 前面加一段解释文字，或者输出的 JSON 里节
 
 ## 反思与反馈层架构
 
-一个完整的反思与反馈层由四个核心模块构成：
+一个完整的反思与反馈层由四个核心模块构成，语图的映射如下：
 
 ```mermaid
 flowchart LR
-  DRAFT["生成初稿"] --> EVAL["评估器 Evaluator"]
+  DRAFT["生成初稿"] --> EVAL["评估器 Evaluator\n（语图：Zod+图遍历）"]
   EVAL -->|"passed=false"| OPT["优化器 Optimizer\n/Rewriter"]
   OPT --> DRAFT
   EVAL -->|"passed=true"| OUTPUT["输出"]
   CTRL["循环控制器\nController"] -.->|"控制循环次数\n和终止条件"| EVAL
-  MEM["记忆/经验沉淀\nMemory"] -.-> OPT
+  MEM["Langfuse trace\n（调试追溯，非经验沉淀）"] -.-> OPT
 ```
 
 ### 评估器（Evaluator）
 
-- **单步反思**：在单次 LLM 调用中要求模型"先生成，再反思"——容易受模型自身偏差影响
-- **两步式反思（推荐）**：将"生成"与"反思"分离。生成 Agent 输出初稿，评审 Agent 仅负责"找问题"，不直接改写，避免引入新错误
-- **外部反馈（工具验证）**：对于需要客观正确性的任务（如 JSON 格式校验），将输出结果交给真实工具验证
+语图的评估器**不用 LLM 做判断**，而是用确定性代码——Zod Schema 校验格式、图遍历校验结构。这属于"外部反馈（工具验证）"模式：将输出结果交给确定性规则验证，而非让模型自我评价。
+
+::: tip 为什么不用 LLM 做评估？
+LLM 自评（单步反思）容易受自身偏差影响——模型倾向于认为自己输出是对的。两步式反思（让另一个模型评审）能缓解但增加成本。语图选择确定性代码校验：格式对不对 Zod 说了算，结构合不合法图遍历说了算，零幻觉、零额外 Token、可预测。
+:::
 
 ### 优化器（Optimizer / Rewriter）
 
@@ -83,7 +87,7 @@ flowchart LR
 
 控制反思-修正循环的执行次数和终止条件，防止无限循环烧 token。
 
-## 人在回路
+## human-in-the-loop
 
 当校验遇到**模糊语义**（无法用确定性规则判断对错）时，系统不盲改，而是交用户确认。
 

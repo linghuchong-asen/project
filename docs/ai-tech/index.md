@@ -27,10 +27,11 @@ category:
 
 ### 应用方向
 
-除了作为独立产品使用，语图 Agent 还有两个延伸方向：
+除了作为独立产品使用，语图 Agent 还有几个延伸方向：
 
 - **作为子 Agent 集成**：探索将当前的 Agent 作为子 Agent，集成到更大的系统中（如知识管理平台、企业协作工具），为宿主系统提供"文本→流程图"的可视化能力，这也是潜在的变现路径。
 - **导出与跨文档集成**：支持将生成的流程图导出为通用图形格式，方便嵌入到其他文档、报告、Wiki 中，让图表成为知识传递的载体。
+- 由一个工具到真实场景完整的一件事，这件事是什么呢，我现在还没有想好。画布可以完成什么事呢？设计、思路整理、黑板。设计具体是哪个方面呢？
 
 ## 架构总览
 
@@ -176,6 +177,188 @@ interface FlowEdge {
 // 3) 拼装注册到画布
 ```
 
+### Modify 场景输出结构
+
+modify 场景下，模型不再输出完整 FlowDraft，而是输出增量操作序列（`ModifyPatchOutput`）。每个 operation 描述一个原子变更——改一个节点的颜色、加一条边、删除一个节点等——系统按序执行后合并到当前画布。操作分两类：结构变更通过 `semantic` 字段描述（label、nodeType），视觉变更通过 `visual` 字段描述（fillColor、borderColor 等受限枚举字段）。
+
+```typescript
+// Modify 场景 — 增量 Patch 输出类型定义
+// NodeType 与 FlowDraft 共享同一套定义，此处不重复
+
+/** 节点视觉 patch — 只描述变化量，未出现的字段保持原值 */
+interface NodeVisualPatch {
+  fillColor?: string;
+  borderColor?: string;
+  borderWidth?: 1 | 2 | 3 | 4 | 5;
+  borderStyle?: "solid" | "dashed" | "dotted";
+  // ... 点击下方展开完整定义
+}
+```
+
+::: details 展开完整类型定义
+
+```typescript
+// ============================================================
+// 语图 Modify 场景 — 增量 Patch 输出类型定义
+// ============================================================
+// NodeType 与 FlowDraft 共享同一套定义，保证两种场景类型词汇一致。
+
+// ────────────────────────────────────────
+// 1. 语义枚举（复用 FlowDraft）
+// ────────────────────────────────────────
+
+/** 节点类型 — 与 FlowDraft 共享，不单独定义 */
+type NodeType = "start" | "end" | "process" | "decision" | "io" | "subprocess";
+
+// ────────────────────────────────────────
+// 2. 视觉属性（受限枚举，非自由 JSON）
+// ────────────────────────────────────────
+
+type BorderStyle = "solid" | "dashed" | "dotted";
+type FontWeight = "normal" | "bold";
+type MarkerType = "classic" | "diamond" | "block" | "circle" | "none";
+type Direction = "top" | "bottom" | "left" | "right";
+
+/** 节点视觉 patch — 只描述变化量，未出现的字段保持原值 */
+interface NodeVisualPatch {
+  fillColor?: string;
+  borderColor?: string;
+  borderWidth?: 1 | 2 | 3 | 4 | 5;
+  borderStyle?: BorderStyle;
+  borderRadius?: number;
+  width?: number;
+  height?: number;
+  fontColor?: string;
+  fontSize?: 10 | 12 | 14 | 16 | 18 | 20 | 24;
+  fontWeight?: FontWeight;
+  shadow?: boolean;
+}
+
+/** 边视觉 patch */
+interface EdgeVisualPatch {
+  strokeColor?: string;
+  strokeWidth?: 1 | 2 | 3 | 4 | 5;
+  strokeDasharray?: string;
+  targetMarker?: MarkerType;
+  sourceMarker?: MarkerType;
+  labelFontColor?: string;
+  labelFontSize?: 10 | 12 | 14 | 16;
+}
+
+// ────────────────────────────────────────
+// 3. Target 定位（按 label 或 id）
+// ────────────────────────────────────────
+
+/** 节点定位 — label 和 id 至少提供一个 */
+interface NodeTarget {
+  label?: string;
+  id?:    string;
+}
+
+/** 按端点 label 定位边 */
+interface EdgeTarget {
+  type: "edge";
+  source: string;
+  target: string;
+}
+
+// ───────────────────────────────────────
+// 4. 相对定位（新增节点时使用）
+// ───────────────────────────────────────
+
+interface RelativePosition {
+  relativeTo: { label: string };
+  direction: Direction;
+  offset?: number; // 间距 px，默认 150
+}
+
+// ─────────────────────────────────────
+// 5. 语义 patch
+// ────────────────────────────────────────
+
+interface NodeSemanticPatch {
+  label?: string;
+  nodeType?: NodeType; // 复用 FlowDraft 的 NodeType
+}
+
+interface EdgeSemanticPatch {
+  label?: string;
+}
+
+// ────────────────────────────────────────
+// 6. Operation 联合类型
+// ────────────────────────────────────────
+
+interface ModifyNodeOp {
+  op: "modify_node";
+  target: NodeTarget;
+  semantic?: NodeSemanticPatch;
+  visual?: NodeVisualPatch;
+}
+
+interface ModifyEdgeOp {
+  op: "modify_edge";
+  target: EdgeTarget;
+  semantic?: EdgeSemanticPatch;
+  visual?: EdgeVisualPatch;
+}
+
+interface AddNodeOp {
+  op: "add_node";
+  semantic: { label: string; nodeType: NodeType };
+  visual?: NodeVisualPatch;
+  position?: RelativePosition;
+}
+
+interface AddEdgeOp {
+  op: "add_edge";
+  semantic: {
+    source: { label: string };
+    target: { label: string };
+    label?: string;
+  };
+  visual?: EdgeVisualPatch;
+}
+
+interface DeleteNodeOp {
+  op: "delete_node";
+  target: NodeTarget;
+}
+interface DeleteEdgeOp {
+  op: "delete_edge";
+  target: EdgeTarget;
+}
+
+interface RepositionOp {
+  op: "reposition";
+  target: NodeTarget;
+  position: RelativePosition;
+}
+
+type Operation =
+  | ModifyNodeOp
+  | ModifyEdgeOp
+  | AddNodeOp
+  | AddEdgeOp
+  | DeleteNodeOp
+  | DeleteEdgeOp
+  | RepositionOp;
+
+// ───────────────────────────────────────
+// 7. 顶层输出
+// ───────────────────────────────────────
+
+interface ModifyPatchOutput {
+  operations: Operation[];
+}
+```
+
+:::
+
+::: tip 与 FlowDraft 的关系
+FlowDraft 用于 generate 场景的全量输出，ModifyPatchOutput 用于 modify 场景的增量输出。两者的语义枚举（NodeType 等）保持一致，区别在于 FlowDraft 描述完整图结构，ModifyPatchOutput 只描述变化量。
+:::
+
 ### 渲染目标结构
 
 FlowDraft 经前端转换层生成 X6 完整 JSON（含坐标、样式、ports、zIndex），作为画布渲染的输入。编辑器保存时，X6 JSON 序列化后存入 PostgreSQL JSONB。
@@ -268,8 +451,8 @@ interface ReflectionResult {
 interface ToolResult {
   status: "success" | "error";
   toolName: string;
-  data?: unknown;      // 成功时的结构化返回
-  error?: ToolError;   // 失败时的结构化错误（见 tool-calling.md）
+  data?: unknown; // 成功时的结构化返回
+  error?: ToolError; // 失败时的结构化错误（见 tool-calling.md）
 }
 ```
 
@@ -278,14 +461,14 @@ interface ToolResult {
 ```typescript
 // LangGraph 状态图的核心 State 结构
 interface AgentState {
-  messages: BaseMessage[];        // 对话消息历史（LangChain MessagesState）
-  intent?: IntentType;             // 意图识别结果
-  flowDraft?: FlowDraft;           // 生成结果（中间结构）
-  canvasContext?: FlowDraft;       // modify 场景注入当前画布语义结构（带 ID），供模型复用
+  messages: BaseMessage[]; // 对话消息历史（LangChain MessagesState）
+  intent?: IntentType; // 意图识别结果
+  flowDraft?: FlowDraft; // 生成结果（中间结构）
+  canvasContext?: FlowDraft; // modify 场景注入当前画布语义结构（带 ID），供模型复用
   reflectionResult?: ReflectionResult; // 反思校验结果
-  userProfile?: UserProfile;       // 用户画像（按需注入）
-  rollingSummary?: string;         // 滚动摘要
-  toolResults?: ToolResult[];      // 工具调用结果
+  userProfile?: UserProfile; // 用户画像（按需注入）
+  rollingSummary?: string; // 滚动摘要
+  toolResults?: ToolResult[]; // 工具调用结果
 }
 ```
 
@@ -302,9 +485,10 @@ interface AgentState {
 Context 的本质是模型的注意力预算，塞进去的每一段都在跟其他段抢注意力。Context 越长，模型对关键信息的注意力越稀释。这不是省 token 的问题，是保注意力的问题。具体策略：
 
 1. 模型输出只有语义信息，不输出坐标样式等数据
-2. 意图识别后按类型组装上下文
-3. 短期记忆判断够用后，不再添加长期记忆
-4. 上下文组装环节兜底，对占比过高的部分进行截断
+2. 在modify场景使用增量输出不使用全量
+3. 意图识别后按类型组装上下文
+4. 短期记忆判断够用后，不再添加长期记忆
+5. 上下文组装环节兜底，对占比过高的部分进行截断
 
 ### 增量修改如何实现？
 
@@ -317,13 +501,52 @@ modify 场景下，用户已在画布上手动调整的节点坐标与样式不�
 LLM 跨调用保持 ID 一致性不可靠（漏写、重编、大小写偏差均会发生），单靠 ID 匹配会误判。于是设计了四层降级匹配，上一层命中即停：
 
 ```typescript
-type MatchLevel = 'id' | 'semantic' | 'topology' | 'edge_check';
+type MatchLevel = "id" | "semantic" | "topology" | "edge_check";
 ```
 
 - **L1 ID 精确匹配**：旧节点 `id === 新节点.id` 直接配对。modify 注入带 ID 的完整 FlowDraft，模型复用 ID 概率较高，这是主路径。
 - **L2 语义匹配**：L1 未配对的剩余节点，按 `(label, type)` 归一化比较。`label.trim().toLowerCase()` 后字符串相等且 `type` 严格相等才配对（`type` 作硬约束，避免 start 误配成 process）。命中判为修改，保留旧 ID，用新内容覆盖。覆盖场景：模型漏写或重写 ID 但节点语义未变，如 `n3:{label:"审批",type:"process"}` → `n3_:{label:"审批",type:"process"}`。
 - **L3 拓扑匹配**：L2 仍剩余节点，比较邻居签名 `(前驱 id 集合, 后继 id 集合)`，前驱 / 后继由 L1/L2 已配对结果确定。签名一致判为修改，保留旧 ID，用新 label 覆盖。覆盖场景：label 变更或重复导致 L2 失配，如 `n5:{label:"通知A"}` → `n5_x:{label:"通知B"}`，label 不同但前后继与旧 n5 一致。
 - **L4 边校验兜底**：L1-L3 均未配对的旧节点，不直接判删除。查当前画布中该节点是否仍被边引用：有边连接 → 判定模型误删，保留节点；无边连接 → 判定为真删除。
+
+:::
+
+::: details 现在模型输出的 FlowDraft 不含样式坐标等信息，如果用户说”修改审批节点为红色”怎么处理？
+
+核心矛盾：语义结构省 token 但丢视觉信息，完整 X6 cell 结构有视觉信息但不可靠且费 token。解决思路是**让模型输出增量 patch（变化量），而非完整 cell 结构**。
+
+patch 将修改分为两类，统一在一个操作序列中：
+
+- **结构变更**：label 修改、节点/边增删 —— 通过 `semantic` 字段描述
+- **视觉变更**：颜色、大小、边框等 —— 通过 `visual` 字段描述，字段名是高层语义（`fillColor`、`borderColor`），系统侧映射为 X6 的 attr 路径
+
+每个操作通过 `target` 定位目标元素（按 label、id 或语义角色），只输出要修改的字段，不写的字段保持原值。系统拿到 patch 后直接合并到现有 cell，不需要输出完整结构。
+
+```typescript
+// 示例：用户说”把审批节点改成红色，并在后面加一个归档节点”
+{
+  operations: [
+    {
+      op: "modify_node",
+      target: { type: "node", oldLabel: "审批" },
+      visual: { fillColor: "#ff0000", fontColor: "#ffffff" },
+    },
+    {
+      op: "add_node",
+      semantic: { label: "归档", nodeType: "process" },
+      position: { relativeTo: { label: "审批" }, direction: "bottom" },
+    },
+    {
+      op: "add_edge",
+      semantic: { source: { label: "审批" }, target: { label: "归档" } },
+    },
+  ];
+}
+```
+
+支持的操作类型：`modify_node`（改节点）、`modify_edge`（改边）、`add_node`（加节点）、`add_edge`（加边）、`delete_node`（删节点）、`delete_edge`（删边）、`reposition`（移动节点）。一次请求可以混合多种操作。
+
+visual 字段是受限枚举而非自由 JSON —— 模型只能从预定义的字段中选择（`fillColor`、`borderColor`、`borderWidth` 等），不能输出 schema 之外的字段。这样 token 开销小（改一个节点只需几十个 token），可靠性由 schema 约束保证。
 
 :::
 

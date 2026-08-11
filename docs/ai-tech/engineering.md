@@ -18,7 +18,8 @@ category:
 |------|---------|---------|
 | 模型输出可控 | 模型只输出 FlowDraft 语义结构（无坐标/样式/ports），出错搜索空间从 X6 完整 JSON 收窄到 4 字段 | [介绍](./index.md) · [前端](./frontend/index.md) |
 | 两层反思校验 | Zod Schema 格式校验 + 图遍历结构校验，命中断头/缺分支/未闭环等确定性规则即阻断重生成 | [反思反馈](./reflection.md) |
-| 分层 diff 防误删 | L1 ID 精确匹配 → L2 语义匹配 → L3 拓扑匹配 → L4 边校验，模型漏写 ID 时不误删节点 | [介绍](./index.md) |
+| 分层 diff 防误删（generate） | L1 ID 精确匹配 → L2 语义匹配 → L3 拓扑匹配 → L4 边校验，模型漏写 ID 时不误删节点 | [介绍](./index.md) |
+| 增量操作逐条校验（modify） | 模型直接输出 ModifyPatchOutput 操作序列，Zod 逐条校验操作类型、target 存在性、字段枚举值，无需 diff | [介绍](./index.md) · [反思反馈](./reflection.md) |
 | 工具失败分级处理 | 网络错误代码重试、参数错误让模型自修正、重试耗尽走降级，结构化错误不丢原始堆栈给模型 | [工具调用](./tool-calling.md) |
 | 模糊语义不盲改 | 反思层遇模糊语义（如分支标签歧义）不自行猜测，交用户确认后再回生成节点 | [反思反馈](./reflection.md) |
 
@@ -31,7 +32,7 @@ category:
 | 思考流式 + 数据一次性 | CoT 思考过程走 SSE 逐 token 推送，FlowDraft JSON 走 fetch 一次性拉取，数据源分离 | [流式输出](./streaming.md) |
 | SSE 连接生命周期 | AbortController 显式管理连接，前端断开时 abort 后端 Observable，LangGraph 节点执行前检查 abort signal | [流式输出](./streaming.md) |
 | 意图识别零延迟路由 | 规则命中（动词特征 + 上下文状态）直接路由，零模型调用成本，仅边界情况交模型兜底 | [意图识别](./intent.md) |
-| 增量修改保留用户布局 | modify 时未变化节点保持原样（含手动坐标），修改节点只更新内容字段，新增节点才重算位置 | [介绍](./index.md) |
+| 增量修改保留用户布局 | modify 时模型输出 ModifyPatchOutput 操作序列，`modify_node` 只 patch semantic/visual 变更字段，坐标与未提及的样式保持原样；仅 `add_node` 触发布局重算 | [介绍](./index.md) |
 | Token 预算管控 | 输入卡模型上下文上限 80%，上下文组装环节按占比截断畸高部分，控总量为主、控条数兜底 | [上下文管理](./context.md) |
 
 ## 可观测
@@ -54,7 +55,7 @@ LLM 应用是黑盒，可观测性是持续迭代的前提——trace 定位问�
 |------|---------|---------|
 | 中间层解耦渲染引擎 | FlowDraft 是纯语义结构，前端转换层负责映射到 X6；切换渲染引擎（如思维导图）只需改转换层和映射表 | [前端](./frontend/index.md) |
 | Skill 配置化动态注册 | 工具定义（名称/描述/参数 Schema/执行器）配置化，用户前端表单配置，后端动态注册到 ToolNode | [工具调用](./tool-calling.md) |
-| 模型分层策略 | 高级模型管生成、中参数模型管反思、规则管意图，按任务复杂度分配算力，模型切换改配置不改编排 | [介绍](./index.md) |
+| 模型分层策略 | 高级模型管生成、规则管意图、代码管反思校验（Zod+图遍历），按任务复杂度分配算力，模型切换改配置不改编排 | [介绍](./index.md) · [反思反馈](./reflection.md) |
 | 记忆分层独立演进 | 短期（Checkpointer）/长期（Store）/画像（独立命名空间）三层分离，各层策略可独立调整 | [记忆管理](./memory.md) · [AI 编排运行时](./ai-runtime.md) |
 | 统一存储扩展 | PG 一身多职（关系+JSONB+向量+全文检索），新增数据形态不引入新组件 | [存储层设计](./backend/storage.md) |
 

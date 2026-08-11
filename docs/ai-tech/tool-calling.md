@@ -16,6 +16,10 @@ RAG、Function Call、MCP 都是广义上的提示词工程——调用外部数
 
 ## 工具形态
 
+::: tip Skill 是什么
+语图中的 "Skill" 指客户端侧的轻量工具——用 Markdown 描述工具名称/用途/参数，前端表单配置，后端动态注册到 ToolNode。与 MCP 的区别：Skill 依附于客户端、创建成本低（Markdown 即可），MCP 是独立外部服务、需提供完整 schema。语图内置的 TemplateMatcher 就是一个 Skill。
+:::
+
 | 形态 | 定位 | 本系统用法 | 上下文管理 |
 |------|------|-----------|:----------:|
 | Function Call | 模型原生工具调用 | 内置工具定义，结构化参数 | 无原生支持 |
@@ -135,33 +139,9 @@ interface ToolError {
 - 后续工具依赖本次结果 → 提示中断
 - 有历史记忆 → 基于历史作答但标注"可能非最新"
 
-### 企业级工具引擎示例
-
-```python
-def enterprise_tool_engine(state):
-    """企业级工具引擎：统一处理日志、重试和结构化错误"""
-    last_message = state["messages"][-1]
-    tool_calls = last_message.tool_calls
-    results = []
-    for tc in tool_calls:
-        # 审计日志
-        print(f"[审计日志] 执行工具: {tc['name']}, 参数: {tc['args']}")
-        # 权限校验、限流控制可在此加入
-        try:
-            actual_func = tool_map[tc['name']]
-            output = actual_func.invoke(tc['args'])
-            content = json.dumps({"status": "success", "data": output})
-        except Exception as e:
-            print(f"[引擎日志] 工具执行失败: {e}")
-            content = json.dumps({
-                "status": "fail",
-                "error_type": "ExecutionError",
-                "message_for_llm": "服务暂时不可用",
-                "suggestion": "请停止调用此工具，向用户致歉并结束任务。"
-            })
-        results.append(ToolMessage(content=content, tool_call_id=tc["id"]))
-    return {"messages": results}
-```
+::: tip 工具引擎的统一出口
+上述重试、错误结构化、降级逻辑全部封装在自定义 ToolNode 内（TypeScript 实现），不暴露给 Agent 节点。Agent 只看到干净的 `ToolMessage`——成功返回结构化数据，失败返回结构化错误 + 修正提示。审计日志、权限校验、限流控制都在 ToolNode 内完成，是"白盒控制"原则的直接体现。
+:::
 
 ## 上下文与结果截断
 
@@ -188,68 +168,31 @@ top-K（数量截断）+ 字段截断（大小截断），防止大结果灌爆�
 - **top-K 管"几条"**：对结果按相关性打分，降序排列，只切前 K 条（如 top-5），第 6 名往后不进 context
 - **字段截断管"每条多大"**：白名单过滤，只保留 `name`、`phone`、`id` 等关键字段
 
-```python
-# 策略1：结构化截断与采样
-if isinstance(processed_data, list):
-    processed_data = processed_data[:5]  # 只保留前5个
-elif isinstance(processed_data, str) and len(processed_data) > 2000:
-    processed_data = processed_data[:1000] + "\n...[内容已截断]...\n" + processed_data[-500:]
-
-# 策略2：基于 Key-Value 的过滤（白名单）
-whitelist = ["name", "phone", "id"]
-clean_data = {k: raw_json[k] for k in whitelist if k in raw_json}
-```
-
-## MCP 协议细节
-
-MCP（Model Context Protocol）基于 JSON-RPC 2.0 标准协议：
-
-### 请求结构
-
-```json
-{
-  "jsonrpc": "2.0",
-  "id": "req-123",
-  "method": "database.query",
-  "params": {
-    "query": "SELECT * FROM sales WHERE date > '2025-01-01'",
-    "connection": "production_db",
-    "pagination": { "page": 1, "page_size": 100 }
+```typescript
+// 策略1：结构化截断与采样
+function truncateResult(data: unknown): unknown {
+  if (Array.isArray(data)) {
+    return data.slice(0, 5); // 只保留前5个
   }
+  if (typeof data === 'string' && data.length > 2000) {
+    return data.slice(0, 1000) + '\n...[内容已截断]...\n' + data.slice(-500);
+  }
+  return data;
+}
+
+// 策略2：基于 Key-Value 的过滤（白名单）
+const WHITELIST = ['name', 'phone', 'id'];
+function filterFields(raw: Record<string, unknown>): Record<string, unknown> {
+  return Object.fromEntries(
+    Object.entries(raw).filter(([k]) => WHITELIST.includes(k))
+  );
 }
 ```
 
-### 返回结构
+## MCP 协议
 
-```json
-{
-  "jsonrpc": "2.0",
-  "id": "req-123",
-  "result": {
-    "rows": [...],
-    "total": 562,
-    "page": 1,
-    "page_size": 100
-  },
-  "error": null
-}
-```
+MCP（Model Context Protocol）基于 JSON-RPC 2.0 标准协议，核心特点：支持 `context_id` 做多轮工具调用状态保持，是外部系统对大模型暴露能力的标准接口。与 Function Call 的关系：MCP 在 Function Call 基础上制定了调用标准并增加了上下文管理，格式转换由客户端 SDK 自动完成。
 
-### Function Call → MCP 格式转换
-
-模型厂商需将 Function Call 格式改写为 MCP 格式，可通过客户端 SDK 自动完成：
-
-```json
-// Function Call 格式
-{ "function_call": { "name": "weather_query", "arguments": {"city": "北京"} } }
-
-// MCP 格式
-{ "jsonrpc": "2.0", "method": "weather_query", "params": {"city": "北京"} }
-```
-
-## 调用可靠性保障
-
-- **超时重试**：通过超时机制避免服务不可用导致的调用失败
-- **错误熔断**：对高频调用场景添加限流策略防止接口过载
-- **指数退避重试**：网络错误时指数退避，最多 3 次
-- **成本阈值控制**：当调用成本超过预设阈值时，模型优先选择内部知识回答
+::: tip 语图中 MCP 的角色
+语图主用内置 Skill（TemplateMatcher）和 Function Call。MCP 作为外部工具接入的预留通道——当需要对接企业内部系统（如 OA 审批、ERP 数据）时，通过 MCP 标准协议接入，不需要改动 Agent 编排逻辑。
+:::

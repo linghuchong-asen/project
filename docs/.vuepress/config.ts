@@ -13,7 +13,7 @@ export default defineUserConfig({
 
   bundler: viteBundler(),
 
-  head: [["link", { real: "icon", href: "/project/favicon.ico" }]], // 配置网站图标
+  head: [["link", { rel: "icon", href: "/project/favicon.ico" }]], // 配置网站图标
 
   theme,
 

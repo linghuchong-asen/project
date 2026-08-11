@@ -15,25 +15,31 @@ category:
 | 内容 | 消费者 | 时间线 | 推送策略 |
 |------|--------|--------|----------|
 | CoT 思考过程 | 给用户看 | 流式逐 token | **SSE 实时推送** |
-| FlowDraft JSON | 给程序用（渲染） | 必须完整 | **前端 fetch 一次性拉取** |
+| FlowDraft JSON（generate） | 给程序用（渲染） | 必须完整 | **前端 fetch 一次性拉取** |
+| ModifyPatchOutput（modify） | 给程序用（增量更新） | 必须完整 | **前端 fetch 一次性拉取** |
 
 不在同一个 SSE 连接里用 event type routing 分流——那会让一条连接既运"展示内容"又运"程序数据"，混用后靠事件类型打补丁区分。分开两个连接、各自独立：
 
 ```
-前端                         后端
- │                           │
- │── POST /api/ai/chat ──────→│ 发起对话，启动 LangGraph
- │←── { threadId }  ─────────│ 立即返回，不等生成完成
- │                           │
- │── SSE /api/ai/think/:id ──→│ 连接 CoT 流
- │←── event: think           │ 逐 token 推送思考过程
- │←── event: think           │
- │←── [连接关闭]             │ 思考结束
- │                           │
- │── GET /api/ai/result/:id ─→│ 拉 FlowDraft
- │←── { nodes, edges } ──────│ 一次性返回完整 JSON
- │                           │
- │  renderToCanvas()         │
+前端                              后端
+ │                                │
+ │── POST /api/ai/chat ──────────→│ 发起对话，启动 LangGraph
+ │←── { threadId }  ─────────────│ 立即返回，不等生成完成
+ │                                │
+ │── SSE /api/ai/think/:id ──────→│ 连接 CoT 流
+ │←── event: think               │ 逐 token 推送思考过程
+ │←── event: think               │
+ │←── [连接关闭]                  │ 思考结束
+ │                                │
+ │── GET /api/ai/result/:id ─────→│ 拉取结果
+ │                                │
+ │  [generate]                    │
+ │←── { nodes, edges } ──────────│ 一次性返回完整 FlowDraft JSON
+ │  renderToCanvas(flowDraft)     │ 全量渲染
+ │                                │
+ │  [modify]                      │
+ │←── { operations: [...] } ─────│ 一次性返回增量操作序列
+ │  applyPatch(operations)        │ 逐条应用到画布
 ```
 
 **职责边界**：SSE 管展示层（给人看），fetch 管数据层（给程序用）。两者耦合只有一个点——SSE 关闭后前端发起 fetch。
@@ -126,6 +132,45 @@ renderToCanvas(flowDraft);
 SSE 关闭 = 思考过程结束 = 模型输出已经进入 `<output>` 阶段。但 JSON 也可能还没写完（思考标签闭合后还有几百个 token 的 JSON 要生成）。用轮询而非"SSE 关闭即捞"更稳妥，重试最多一次就到了。
 :::
 
+## Modify 场景的结果交付
+
+同一个 `GET /api/ai/result/:threadId` 接口，按 intent 返回不同结构：generate 返回 `flowDraft`，modify 返回 `operations`。
+
+```typescript
+// 后端：按 intent 分支返回
+@Get('ai/result/:threadId')
+async getResult(@Param('threadId') threadId: string) {
+  const state = await this.aiService.getState(threadId);
+
+  if (state.intent === 'modify') {
+    if (!state.operations) {
+      throw new HttpException('Not ready', HttpStatus.ACCEPTED);
+    }
+    return { type: 'modify', operations: state.operations };
+  }
+
+  if (!state.flowDraft) {
+    throw new HttpException('Not ready', HttpStatus.ACCEPTED);
+  }
+  return { type: 'generate', flowDraft: state.flowDraft };
+}
+```
+
+```typescript
+// 前端：按 type 分发渲染
+async function fetchAndRender(threadId: string) {
+  const result = await fetchResult(threadId);
+
+  if (result.type === 'generate') {
+    renderToCanvas(result.flowDraft);       // 全量渲染
+  } else {
+    applyPatch(result.operations);          // 逐条增量应用
+  }
+}
+```
+
+前端不需要靠额外请求判断意图——响应体自带 `type` 字段，拿到后直接分发。
+
 ## LangGraph 事件流对接
 
 生成节点通过 LangGraph 的 `astream_events()` 拿到 token 流，按标签状态分发到不同分支：
@@ -163,14 +208,16 @@ async *getThinkingTokens(threadId: string) {
 }
 ```
 
-`on_chat_model_stream` 只用于思考过程的实时推送。FlowDraft 的完整 JSON 不从这里拿，而是由 `on_chain_end`（generate 节点完成事件）把 `flowDraft` 写入 State，供 `GET /api/ai/result/:id` 读取。两者数据源分离。
+`on_chat_model_stream` 只用于思考过程的实时推送。完整数据不从这里拿，而是由 `on_chain_end`（生成节点完成事件）写入 State：generate 场景写入 `flowDraft`，modify 场景写入 `operations`（`ModifyPatchOutput`），供 `GET /api/ai/result/:id` 按 intent 读取返回。两者数据源分离。
 
 ## Prompt 标签约定
 
 模型在同一个回复中先输出 `<thinking>` 再输出 `<output>`。token 序列天然是从思考到结果——自回归生成机制决定了 `<thinking>` 在前的 token 先生成。
 
+两种意图的 `<output>` 内容不同，由上下文组装环节按 intent 注入对应的 Schema 说明：
+
 ```
-# System Prompt 中的格式约束
+# generate 场景的 System Prompt
 
 你需要先输出思考过程，再输出最终结果。格式如下：
 
@@ -185,11 +232,33 @@ async *getThinkingTokens(threadId: string) {
 
 <output>
 {
-  "nodes": [...],
-  "edges": [...]
+  "nodes": [{ "id": "n1", "label": "提交申请", "type": "process" }, ...],
+  "edges": [{ "source": "n1", "target": "n2", "label": "" }, ...]
+}
+</output>
+
+# modify 场景的 System Prompt
+
+你需要先输出思考过程，再输出增量操作指令。格式如下：
+
+<thinking>
+分析用户修改意图：
+- 目标节点：...（通过 label / id / 语义角色定位）
+- 修改内容：...
+- 操作序列：共 N 条操作
+</thinking>
+
+<output>
+{
+  "operations": [
+    { "op": "modify_node", "target": { "type": "node", "oldLabel": "审批" }, "visual": { "fillColor": "#F5222D" } },
+    { "op": "add_node", "semantic": { "label": "抄送", "nodeType": "process" }, "position": { "relativeTo": { "label": "审批" }, "direction": "bottom" } }
+  ]
 }
 </output>
 ```
+
+模型每次只看到一种 Schema——generate 时不知道 ModifyPatchOutput 的存在，modify 时不知道 FlowDraft 的存在。这从源头避免模型混淆两种输出格式。
 
 ::: tip 为什么思考一定会先生成？
 LLM 是逐 token 自回归的。`<thinking>` 在 prompt 里写在 `<output>` 前面，模型就必然先产出思考内容、再产出 JSON。思考 token 写进 KV Cache 后，后续 JSON 生成时注意力能"看到"思考过程——这是真正的 CoT，不是前端障眼法。
@@ -204,7 +273,7 @@ LLM 是逐 token 自回归的。`<thinking>` 在 prompt 里写在 `<output>` 前
 | SSE `/api/ai/think/:id` | `<thinking>` 标签结束 或 用户离开 | token 持续推送浪费 |
 | fetch `/api/ai/result/:id` | 拿到 JSON 即刻断 | 无泄漏（单次请求） |
 
-SSE 的防泄露和旧版一致——`takeUntil(abort$)`：
+SSE 的防泄露核心是 `takeUntil(abort$)`——连接关闭时（用户离开或思考结束）自动终止 Observable，不再推送 token：
 
 ```typescript
 const abort$ = new Subject<void>();
