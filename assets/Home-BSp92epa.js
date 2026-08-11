@@ -1,0 +1,1 @@
+import{D as e,I as t,j as n}from"./app-BIjqbl_i.js";var r=n({__name:`Home`,setup(n){return(n,r)=>(t(),e(`div`,null,`自定义首页`))}});export{r as default};
